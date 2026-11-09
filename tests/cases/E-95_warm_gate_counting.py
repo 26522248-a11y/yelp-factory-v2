@@ -115,13 +115,8 @@ async def test_warm_session_today_still_trips_the_daily_cap(settings, make_accou
     assert result.get("status") == "SKIPPED_TODAY", f"warm session today must block a second run: {result}"
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="days_active still counts meta.seed rows while session_count and warm evidence exclude "
-    "them, so imported history alone can satisfy the 7-day hard gate "
-    "(core/assignments.py:_profile_ready). Scope decision for MINH, not a flake.",
-)
 def test_days_active_also_excludes_seed_rows(make_account):
+    """Same "warm evidence" definition for all four counters, or fake history passes the 7-day gate."""
     account = make_account()
     for day in range(1, 9):
         _add_session(account.id, mode="warm", days_ago=day, meta={"seed": True})

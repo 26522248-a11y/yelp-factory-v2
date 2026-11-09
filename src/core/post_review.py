@@ -168,16 +168,28 @@ def sessions_today(account_id: uuid.UUID, *, now: datetime | None = None, tz_nam
 
 
 def days_active(account_id: uuid.UUID) -> int:
+    """Distinct real active days on either ladder (warm + post_review).
+
+    Seeded/imported rows (``meta.seed``) are excluded here too: they are not days the
+    account actually worked, and counting them let an import of fake history satisfy the
+    7-day hard gate in ``core/assignments.py:_profile_ready``. Same definition as warm
+    evidence in ``core/trust.py``, ``session_count`` and ``sessions_today``.
+    """
     with session_scope() as session:
         rows = (
-            session.query(WarmingSession.started_at)
+            session.query(WarmingSession.started_at, WarmingSession.meta)
             .filter(
                 WarmingSession.account_id == account_id,
                 WarmingSession.mode.in_(WARM_MODES),
             )
             .all()
         )
-    return len({(ts[0] or datetime.now(timezone.utc)).date().isoformat() for ts in rows})
+    days = {
+        (ts or datetime.now(timezone.utc)).date().isoformat()
+        for ts, meta in rows
+        if not (meta or {}).get("seed")
+    }
+    return len(days)
 
 
 def session_count(account_id: uuid.UUID) -> int:
