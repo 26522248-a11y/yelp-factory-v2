@@ -20,4 +20,7 @@ pgdata/
 data/_*.py
 data/_newtoken.txt
 artifacts/
-
+# scratch ops files (local only, never commit)
+tmp_*
+tools_tmp_check.py
+*.log

@@ -9,6 +9,29 @@
 | Python 3.12 venv | `.venv` |
 | Artifacts | `artifacts/` (ảnh, DOM, HAR của bước lỗi) |
 
+## 0.1 Dựng Postgres portable (máy mới / máy QA)
+
+Một lệnh, chạy từ thư mục repo:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup_pg_portable.ps1
+```
+
+Script tải Postgres 16.6 portable (EDB binaries, ~290 MB) về `data/pg/pgsql`, `initdb` cluster ở `data/pgdata`,
+bật cổng **5433** (`listen_addresses=127.0.0.1`, auth `scram-sha-256`), tạo DB `yelp_factory` và ghi
+`YF_DATABASE_URL` + `YF_MASTER_KEY` (random 32 byte) vào `.env` nếu chưa có. Chạy lại được, không phá cluster cũ.
+
+**Đường dẫn chuẩn (duy nhất):** binaries `data/pg/pgsql`, data dir `data/pgdata` — repo-relative, khớp `scripts/yf_launcher.ps1`.
+`C:\pg16` / `C:\pgdata2` trong tài liệu cũ là của máy cũ (chạy dưới Administrator), đã bị loại bỏ.
+
+Sau khi dựng xong:
+
+```powershell
+# Schema: DB trắng -> create_all + stamp head; DB cũ -> alembic upgrade
+.\.venv\Scripts\yf.exe db-init
+python -m cli db-check     # model <-> DB, phải ok:true
+```
+
 ## 1. Khởi động
 
 ```powershell
@@ -148,6 +171,7 @@ Chạy tay một account:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests -q
+# Máy QA (không có .venv): python -m pytest tests -q  -> phải 0 skipped, DB phải thật
 .\.venv\Scripts\python.exe -m pytest tests/cases -q     # 1 file / edge case
 ```
 

@@ -414,7 +414,7 @@ Login: sai mật khẩu **retry 1 lần** rồi mới dừng; gặp captcha/"ver
 
 ### Pool dữ liệu + Review phase (2026-11-09)
 
-Postgres local: `C:\pg16` (binaries) + `C:\pgdata2` (data), cổng **5433**, user `pguser`;
+Postgres local: `data/pg/pgsql` (binaries) + `data/pgdata` (data), cổng **5433**, user `postgres`, DB `yelp_factory`;
 task `YelpFactoryPostgres` tự khởi động cùng máy.
 
 ```powershell
