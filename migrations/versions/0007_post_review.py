@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "0007_post_review"
 down_revision = "0006_batches"
@@ -18,7 +19,10 @@ depends_on = None
 
 def upgrade() -> None:
     op.add_column("warming_sessions", sa.Column("mode", sa.String(32), nullable=False, server_default="warm"))
-    op.add_column("warming_sessions", sa.Column("meta", sa.JSON(), nullable=False, server_default=sa.text("'{}'::json")))
+    op.add_column(
+        "warming_sessions",
+        sa.Column("meta", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
+    )
     op.add_column("accounts", sa.Column("reviews_done", sa.Boolean(), nullable=False, server_default=sa.text("false")))
 
 

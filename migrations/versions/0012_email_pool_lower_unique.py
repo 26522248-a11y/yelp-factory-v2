@@ -16,11 +16,23 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "0012_email_pool_lower_unique"
+
 down_revision = "0011_slots"
 branch_labels = None
 depends_on = None
 
 INDEX_NAME = "uq_email_pool_mailbox_email_lower"
+
+
+def _index_exists() -> bool:
+    """0005 already declares this index (fresh installs get it from there), so the
+    replay must not create it twice."""
+    bind = op.get_bind()
+    found = bind.execute(
+        sa.text("select 1 from pg_indexes where schemaname = 'public' and indexname = :n"),
+        {"n": INDEX_NAME},
+    ).first()
+    return found is not None
 
 
 def upgrade() -> None:
@@ -46,13 +58,15 @@ def upgrade() -> None:
         DELETE FROM email_pool WHERE id IN (SELECT id FROM ranked WHERE rn > 1)
         """
     )
-    op.create_index(
-        INDEX_NAME,
-        "email_pool",
-        [sa.text("lower(mailbox_email)")],
-        unique=True,
-    )
+    if not _index_exists():
+        op.create_index(
+            INDEX_NAME,
+            "email_pool",
+            [sa.text("lower(mailbox_email)")],
+            unique=True,
+        )
 
 
 def downgrade() -> None:
-    op.drop_index(INDEX_NAME, table_name="email_pool")
+    if _index_exists():
+        op.drop_index(INDEX_NAME, table_name="email_pool")

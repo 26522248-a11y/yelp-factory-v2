@@ -22,7 +22,7 @@ def upgrade() -> None:
         sa.Column("token", sa.Uuid(), primary_key=True),
         sa.Column("worker_id", sa.String(120), nullable=False),
         sa.Column("purpose", sa.String(32), nullable=False, server_default="warm"),
-        sa.Column("heartbeat_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("heartbeat_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("ttl_seconds", sa.Integer(), nullable=False, server_default="7200"),
     )
 

@@ -190,6 +190,11 @@ class Account(Base):
         UniqueConstraint("profile_id", name="uq_accounts_profile_id"),
         UniqueConstraint("email", name="uq_accounts_email"),
         Index("ix_accounts_state", "state"),
+        # Chain-only indexes (0006:39 batch_id, 0008:61 metro_id): create_all/db-init used
+        # to miss them, so a fresh install silently lacked 2 indexes. Declared here so both
+        # install paths emit the same schema.
+        Index("ix_accounts_batch_id", "batch_id"),
+        Index("ix_accounts_metro", "metro_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_uuid)

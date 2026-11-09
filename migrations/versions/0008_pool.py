@@ -24,7 +24,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(160), nullable=False, unique=True),
         sa.Column("state", sa.String(8), nullable=False, server_default=""),
         sa.Column("country", sa.String(2), nullable=False, server_default="US"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_table(
         "clients",
@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column("yelp_biz_id", sa.String(200), nullable=False, unique=True),
         sa.Column("address", sa.String(300), nullable=True),
         sa.Column("facts", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_table(
         "assignments",
@@ -47,7 +47,7 @@ def upgrade() -> None:
         sa.Column("published_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("filtered_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("meta", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("client_id", "account_id", name="uq_assignment_client_account"),
     )
     op.create_index("ix_assignment_due", "assignments", ["status", "review_due_at"])
@@ -55,7 +55,7 @@ def upgrade() -> None:
         "system_flags",
         sa.Column("key", sa.String(64), primary_key=True),
         sa.Column("value", postgresql.JSONB(), nullable=False, server_default=sa.text("'{}'::jsonb")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.add_column("accounts", sa.Column("metro_id", sa.Uuid(), sa.ForeignKey("metros.id"), nullable=True))
     op.create_index("ix_accounts_metro", "accounts", ["metro_id"])
