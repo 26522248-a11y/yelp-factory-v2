@@ -94,6 +94,7 @@ replaying the broken chain").
   KHONG bao gio chay `upgrade head` tren DB trong.
 - Sua `0001` de replay duoc ca chain la quyet dinh cua @MINH/@DUC, khong tu lam tren may QA.
 0. Migration da commit vao git chua (khong deploy thang tu working tree):
+
    ```powershell
    git ls-files migrations/versions/
    ```
