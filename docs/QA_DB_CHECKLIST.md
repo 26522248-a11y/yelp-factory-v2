@@ -60,11 +60,30 @@ Pham vi ma E-95 khoa (acc chi co session `mode="warm"`):
 - Row `meta.seed` va `mode` la khong duoc tinh vao `trust` / `session_count` / `sessions_today` / `days_active`.
 - Session `warm` trong ngay -> `run_post_review_warm` tra `SKIPPED_TODAY` (cap 1 phien/ngay tinh ca warm).
 
-## 5. Mau bao cao
+## 5. Mailbox unique (case-insensitive) - kiem tra index that
+
+`db-check` KHONG chung minh duoc index bieu thuc `lower(mailbox_email)` ton tai
+(alembic autogenerate khong doc functional index - blind spot), nen phai hoi thang Postgres:
+
+```powershell
+set PGPASSWORD=postgres&& data\pg\pgsql\bin\psql.exe -h 127.0.0.1 -p 5433 -U postgres -d yelp_factory -c "select indexname, indexdef from pg_indexes where tablename='email_pool'"
+```
+
+Ky vong thay `uq_email_pool_mailbox_email_lower` voi `UNIQUE ... (lower((mailbox_email)::text))`.
+Da co test `tests/unit/test_pool_email_unique.py::test_lower_unique_index_exists_in_database`
+assert dung dieu nay, chay: `python -m pytest tests/unit/test_pool_email_unique.py -q` -> **5 passed**.
+
+Luu y migration `0012`: QA DB duoc dung bang `create_all` + `stamp head` nen phan DELETE gop
+case-duplicate cua `0012` chua tung chay that. Muon test migration: dung mot DB probe rieng
+(`createdb yf_probe`), `stamp 0011`, chen 2 row duplicate khac hoa/thuong, roi `upgrade head`.
+**Tren DB co du lieu that: chay `scripts\backup_postgres.ps1` lay dump TRUOC khi upgrade** (0012 co DELETE).
+
+## 6. Mau bao cao
 
 ```
 Moi truong: <repo path>, PostgreSQL <version>, port 5433
 Lenh: python -m pytest tests -q
 Ket qua: X passed, Y failed, Z skipped trong Ns
 E-93 + E-95: <pass/fail> (ky vong 9 passed)
+Mailbox unique: index `uq_email_pool_mailbox_email_lower` co trong pg_indexes: <yes/no>
 ```
