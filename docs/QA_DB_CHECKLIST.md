@@ -62,8 +62,9 @@ Pham vi ma E-95 khoa (acc chi co session `mode="warm"`):
 
 ## 5. Mailbox unique (case-insensitive) - kiem tra index that
 
-`db-check` KHONG chung minh duoc index bieu thuc `lower(mailbox_email)` ton tai
-(alembic autogenerate khong doc functional index - blind spot), nen phai hoi thang Postgres:
+`db-check` co bat duoc index functional **bi thieu** (tra `ok:false` + `add_index
+uq_email_pool_mailbox_email_lower`) **neu DB da stamp**; nhung no KHONG phan anh **dinh nghia**
+index sai (cung ten, khac bieu thuc) -> van phai hoi thang Postgres:
 
 ```powershell
 set PGPASSWORD=postgres&& data\pg\pgsql\bin\psql.exe -h 127.0.0.1 -p 5433 -U postgres -d yelp_factory -c "select indexname, indexdef from pg_indexes where tablename='email_pool'"
@@ -148,8 +149,11 @@ Da verify them tren may QA (probe rieng cua @AN: DB `yf_p5` / `yf_p6`, khong dun
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schema_fingerprint.ps1 -DbName yf_chain_probe -CompareTo yelp_factory
 ```
 
-Ky vong: `DIFF: 0` va cung `Fingerprint`. Baseline schema head `0012` (bo qua `alembic_version`):
-`be09a238c9108890997e7bfc042ad6a8c8df098f7640d8072dfc5cc82f1b4f15` (27 bang / 52 index / 60 constraint).
+Ky vong: `DIFF: 0` va cung `Fingerprint`. Baseline schema head `0012` + 2 index moi cua `models.py`
+(bo qua `alembic_version`):
+`3c784299f96b1668f15df0dba505e0e87fcdc3ede8cfe3f9755173caaa11c881` (**27 bang / 54 index / 60 constraint**).
+Baseline CU (schema truoc khi them `ix_accounts_batch_id` + `ix_accounts_metro`):
+`be09a238c9108890997e7bfc042ad6a8c8df098f7640d8072dfc5cc82f1b4f15` (27 / 52 / 60) - chi dung cho bang cu, da cu.
 
 Dung script nay sau khi viet lai `0001` de chung minh replay ca chain ra dung schema, va de bat cac object
 khong khai bao trong `models.py` (db-check chi so model voi DB). Ket qua verify tren may QA:
@@ -158,6 +162,32 @@ khong khai bao trong `models.py` (db-check chi so model voi DB). Ket qua verify 
 - `db-check` **van bat** index do bi thieu (tra `ok:false` + `add_index uq_email_pool_mailbox_email_lower`)
   mien la DB da `stamp`; DB chua stamp thi tra `ok:false` voi "Target database is not up to date".
   => `db-check` khong mu voi functional index nhu lo ngai, nhung no doi DB da stamp va no chi so voi model.
+
+### 6c. Diem mu: `DIFF: 0` mot minh la PASS GIA - phai kiem CA 2 cong
+
+Tieu chi nghiem thu vong viet lai `0001` (chain replay 0001 -> 0012 tren DB probe rieng):
+1. `schema_fingerprint` -> `DIFF: 0` so voi `yelp_factory` (baseline `3c784299...`, 27 / 54 / 60), VA
+2. `python -m cli db-check` -> `ok: true`, `drift: null` tren chinh DB chain-replay do.
+
+`DIFF: 0` **mot minh khong du**: fingerprint chi so `TABLE/INDEX/CONSTR`; `NOT NULL` cua cot khong
+phai `pg_constraint` o Postgres nen fingerprint khong thay, va kieu cot (`json` vs `jsonb`) cung khong
+thay. Do do DB chain-replay ra `DIFF: 0` ma van lech voi duong `db-init` o 6 cho:
+- 5 cot bi nullable trong chain, `NOT NULL` o DB QA: `assignments.created_at`,
+  `browser_slots.heartbeat_at`, `clients.created_at`, `metros.created_at`, `system_flags.updated_at`;
+- `warming_sessions.meta`: chain de kieu `json`, DB QA de `jsonb`.
+
+Khi viet `0001`/`0004`/`0005`/`0006` bang `op.create_table` phai khai bao `nullable=False` cho 5 cot
+do va dung `JSONB` cho `warming_sessions.meta`; chi xanh khi ca 2 cong cung dat.
+
+Diem mu **nguoc lai** cua `db-check`: predicate cua partial index (`postgresql_where`) - no KHONG bao
+khi predicate `uq_runs_one_running_per_account` doi tu `state = 'RUNNING'` sang `'DONE'`, trong khi
+fingerprint bat (`DIFF: 4`). Nguoc lai, `db-check` **bat** duoc functional index cung ten nhung sai
+dinh nghia (`upper(mailbox_email)` thay cho `lower(...)`).
+ => Quy tac: luon chay CA `schema_fingerprint` VA `db-check`, khong tin mot cai nao mot minh.
+
+Ghi chu 2 index moi: `ix_accounts_batch_id` + `ix_accounts_metro` da duoc them vao `models.py` (de
+`db-init` / install moi khong mat index). DB QA 0 dong nen da tao them 2 index nay tren
+`yelp_factory` - len DB co du lieu that van phai lam buoc 1-2 cua muc 6 (backup truoc).
 
 ## 7. Mau bao cao
 
@@ -168,4 +198,6 @@ Ket qua: X passed, Y failed, Z skipped trong Ns
 E-93 + E-95: <pass/fail> (ky vong 9 passed)
 Mailbox unique: index `uq_email_pool_mailbox_email_lower` co trong pg_indexes: <yes/no>
 Rollback window: da dump rieng bang `email_pool` truoc downgrade, khong chay traffic o `0011`: <yes/no>
+Fingerprint baseline: <3c784299... 27/54/60> | DIFF vs yelp_factory: <n>
+db-check tren DB chain-replay: ok:<true/false> (ca 2 moi tinh la khop schema)
 ```
