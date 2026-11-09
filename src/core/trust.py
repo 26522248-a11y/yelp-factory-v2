@@ -1,9 +1,27 @@
-"""Account trust score + action gates (warming spec v1.0, section 0)."""
+"""Account trust score + action gates (warming spec v1.0, section 0).
+
+Warm evidence definition (fixed 2026-11-09, decision by MINH): trust must be derived
+from real behaviour, so *every* real warming session counts - not only the
+``post_review`` maintenance mode. The previous filter (``mode == "post_review"``) made
+the ``warm`` component 0 for the whole pre-review life of an account, which capped the
+theoretical score at 60 < 75 and made the review gate unreachable (deadlock).
+
+A warming session is evidence when ALL of the following hold:
+
+1. ``mode`` is in :data:`WARM_MODES` (``"warm"`` = normal ladder, ``"post_review"`` =
+   maintenance ladder). Any future mode must be added here explicitly.
+2. ``started_at`` is within :data:`WARM_WINDOW_DAYS` (30) of "now".
+3. It carries real work: ``max(warming_sessions.actions, count(action_log rows for that
+   session)) >= WARM_MIN_ACTIONS``. Opening Yelp and idling is not evidence.
+4. ``meta.seed`` is not true - seeded/imported history is never evidence.
+
+Points: ``min(18, sessions*2) + min(12, distinct active days*1.5)`` = 30 max.
+"""
 
 from __future__ import annotations
 
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
@@ -19,7 +37,7 @@ WEIGHTS = {
     "profile": 15,
     "consistency": 12,
     "diversity": 18,
-    "warm": 30,      # real warm history (sessions + active days) - added 2026-11-09 to break the review deadlock
+    "warm": 30,      # real warm history (sessions + active days) - see warm evidence above
     "content": 20,   # reviews
     "risk": -20,
 }
@@ -38,6 +56,20 @@ REVIEW_THRESHOLD = 75
 REVIEW_MIN_AGE_DAYS = 11
 REVIEW_MIN_SESSIONS_7D = 6
 
+# --- warm evidence (single source of truth) -------------------------------------------
+WARM_MODES = ("warm", "post_review")
+WARM_WINDOW_DAYS = 30
+WARM_MIN_ACTIONS = 3
+WARM_SESSION_POINTS = 2.0
+WARM_SESSION_CAP = 18.0
+WARM_DAY_POINTS = 1.5
+WARM_DAY_CAP = 12.0
+
+# Photo uploads are *profile building*, i.e. they create the evidence the review gate
+# later reads (assignments._profile_ready needs photos_uploaded >= 8). Gating them at 75
+# would keep them behind the very gate they feed, so they unlock early.
+UPLOAD_PHOTO_MIN_SCORE = 25
+
 
 @dataclass
 class TrustBreakdown:
@@ -48,6 +80,7 @@ class TrustBreakdown:
     warm: float = 0
     content: float = 0
     risk: float = 0
+    evidence: dict = field(default_factory=dict)
 
     @property
     def score(self) -> int:
@@ -58,6 +91,21 @@ class TrustBreakdown:
         data = asdict(self)
         data["score"] = self.score
         return data
+
+
+@dataclass
+class WarmEvidence:
+    """How the ``warm`` component was earned - exposed for CLI/ops and for tests."""
+
+    sessions: int = 0          # evidence sessions inside the window
+    sessions_seen: int = 0     # all sessions inside the window, before filtering
+    active_days: int = 0
+    rejected_no_work: int = 0  # sessions with < WARM_MIN_ACTIONS real actions
+    rejected_seed: int = 0
+    points: float = 0.0
+
+    def as_dict(self) -> dict:
+        return asdict(self)
 
 
 def _age_component(account: Account, now: datetime) -> float:
@@ -106,29 +154,66 @@ def _diversity_component(actions: list[ActionLog]) -> float:
     return min(18.0, score)
 
 
-def _warm_component(account_id: uuid.UUID, now: datetime) -> float:
-    """Real warm history only: seeded sessions (meta.seed) never count.
+def warm_evidence_from_rows(rows: list[tuple]) -> WarmEvidence:
+    """Pure scoring of warm evidence.
 
-    sessions part: min(18, sessions*2) over the last 30 days
-    days part:     min(12, distinct active days*1.5)
+    ``rows`` is a sequence of ``(started_at, actions, meta, logged_actions)`` where
+    ``logged_actions`` is the number of ``action_log`` rows tied to that session.
+    Keeping this pure means the formula is testable without a database.
     """
+    evidence = WarmEvidence(sessions_seen=len(rows))
+    days: set[str] = set()
+    for started_at, actions, meta, logged_actions in rows:
+        meta = meta or {}
+        if meta.get("seed"):
+            evidence.rejected_seed += 1
+            continue
+        work = max(int(actions or 0), int(logged_actions or 0))
+        if work < WARM_MIN_ACTIONS:
+            evidence.rejected_no_work += 1
+            continue
+        evidence.sessions += 1
+        if started_at is not None:
+            days.add(started_at.date().isoformat())
+    evidence.active_days = len(days)
+    evidence.points = min(WARM_SESSION_CAP, evidence.sessions * WARM_SESSION_POINTS) + min(
+        WARM_DAY_CAP, evidence.active_days * WARM_DAY_POINTS
+    )
+    return evidence
+
+
+def warm_evidence(account_id: uuid.UUID, *, now: datetime | None = None) -> WarmEvidence:
     from db.models import WarmingSession
 
-    cutoff = now - timedelta(days=30)
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=WARM_WINDOW_DAYS)
     with session_scope() as session:
-        rows = (
-            session.query(WarmingSession.started_at, WarmingSession.meta)
+        sessions = (
+            session.query(WarmingSession.id, WarmingSession.started_at, WarmingSession.actions, WarmingSession.meta)
             .filter(
                 WarmingSession.account_id == account_id,
-                WarmingSession.mode == "post_review",
+                WarmingSession.mode.in_(WARM_MODES),
                 WarmingSession.started_at >= cutoff,
             )
             .all()
         )
-    real = [(ts, meta or {}) for ts, meta in rows if not (meta or {}).get("seed")]
-    sessions = len(real)
-    days = len({(ts or now).date().isoformat() for ts, _ in real})
-    return min(18.0, sessions * 2.0) + min(12.0, days * 1.5)
+        if not sessions:
+            return WarmEvidence()
+        per_session = dict(
+            session.query(ActionLog.session_id, func.count(ActionLog.id))
+            .filter(ActionLog.account_id == account_id, ActionLog.session_id.isnot(None))
+            .group_by(ActionLog.session_id)
+            .all()
+        )
+    rows = [
+        (started_at, actions, meta, per_session.get(session_id, 0))
+        for session_id, started_at, actions, meta in sessions
+    ]
+    return warm_evidence_from_rows(rows)
+
+
+def _warm_component(account_id: uuid.UUID, now: datetime) -> float:
+    return warm_evidence(account_id, now=now).points
 
 
 def _content_component(reviews: list[ReviewAttempt]) -> float:
@@ -225,20 +310,29 @@ def recompute_all(limit: int = 500) -> dict:
 def allowed_kinds(score: int) -> set[str]:
     """Deterministic gate: which action kinds an account may perform at this score."""
     kinds = {"pageview", "search", "scroll", "session"}
+    if score >= UPLOAD_PHOTO_MIN_SCORE:
+        # profile building: must be available long before the review gate it feeds
+        kinds |= {"upload_photo"}
     if score >= 40:
         kinds |= {"save", "view_photo", "view_review"}
     if score >= 60:
         kinds |= {"vote", "follow"}
-    if score >= 75:
-        kinds |= {"review", "checkin", "upload_photo"}
+    if score >= REVIEW_THRESHOLD:
+        kinds |= {"review", "checkin"}
     return kinds
 
 
 def review_eligible(account_id: uuid.UUID, *, now: datetime | None = None) -> tuple[bool, str]:
+    from db.models import WarmingSession
+
     now = now or datetime.now(timezone.utc)
     breakdown = compute_trust(account_id, now=now)
     if breakdown.score < REVIEW_THRESHOLD:
-        return False, f"trust {breakdown.score} < {REVIEW_THRESHOLD}"
+        evidence = warm_evidence(account_id, now=now)
+        return False, (
+            f"trust {breakdown.score} < {REVIEW_THRESHOLD} "
+            f"(warm {breakdown.warm:.1f}/30, sessions {evidence.sessions}, days {evidence.active_days})"
+        )
     with session_scope() as session:
         account = session.get(Account, account_id)
         if account is None or account.created_at is None:

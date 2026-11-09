@@ -167,7 +167,10 @@ def days_active(account_id: uuid.UUID) -> int:
     with session_scope() as session:
         rows = (
             session.query(WarmingSession.started_at)
-            .filter(WarmingSession.account_id == account_id, WarmingSession.mode == PLAN_STATUS)
+            .filter(
+                WarmingSession.account_id == account_id,
+                WarmingSession.mode.in_([PLAN_STATUS, "warm"]),
+            )
             .all()
         )
     return len({(ts[0] or datetime.now(timezone.utc)).date().isoformat() for ts in rows})

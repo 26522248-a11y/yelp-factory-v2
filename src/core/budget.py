@@ -8,11 +8,13 @@ from typing import Any
 
 PHASE_DEFAULTS: dict[str, dict[str, int]] = {
     # phase: {kind: max actions per day}
-    "P0": {"pageview": 8, "search": 4, "scroll": 20, "save": 0, "vote": 0, "follow": 0, "review": 0, "photo": 0, "checkin": 0},
-    "P1": {"pageview": 8, "search": 4, "scroll": 20, "save": 3, "vote": 0, "follow": 0, "review": 0, "photo": 2, "checkin": 0},
-    "P2": {"pageview": 8, "search": 4, "scroll": 20, "save": 3, "vote": 5, "follow": 2, "review": 0, "photo": 2, "checkin": 0},
-    "P3": {"pageview": 8, "search": 4, "scroll": 20, "save": 3, "vote": 5, "follow": 2, "review": 1, "photo": 2, "checkin": 0},
-    "P4": {"pageview": 10, "search": 5, "scroll": 30, "save": 4, "vote": 6, "follow": 2, "review": 1, "photo": 3, "checkin": 1},
+    # "photo" = view photo albums; "upload_photo" = real profile uploads (trust evidence:
+    # assignments._profile_ready needs photos_uploaded >= 8 before any review).
+    "P0": {"pageview": 8, "search": 4, "scroll": 20, "save": 0, "vote": 0, "follow": 0, "review": 0, "photo": 0, "upload_photo": 0, "checkin": 0},
+    "P1": {"pageview": 8, "search": 4, "scroll": 20, "save": 3, "vote": 0, "follow": 0, "review": 0, "photo": 2, "upload_photo": 1, "checkin": 0},
+    "P2": {"pageview": 8, "search": 4, "scroll": 20, "save": 3, "vote": 5, "follow": 2, "review": 0, "photo": 2, "upload_photo": 1, "checkin": 0},
+    "P3": {"pageview": 8, "search": 4, "scroll": 20, "save": 3, "vote": 5, "follow": 2, "review": 1, "photo": 2, "upload_photo": 1, "checkin": 0},
+    "P4": {"pageview": 10, "search": 5, "scroll": 30, "save": 4, "vote": 6, "follow": 2, "review": 1, "photo": 3, "upload_photo": 1, "checkin": 1},
 }
 
 
