@@ -56,7 +56,7 @@ Ky vong: **9 passed** (E-93 3 + E-95 6).
 
 Pham vi ma E-95 khoa (acc chi co session `mode="warm"`):
 - `session_count()` > 0 va `sessions_today()` >= 1 (khong con = 0 nhu truoc khi sua).
-- Unlock ladder vuot P0 (vd `[P0,P1,P2,P4]`), khong chỉ `P0`.
+- Unlock ladder vuot P0 (vd `[P0,P1,P2,P4]`), khong chi `P0`.
 - Row `meta.seed` va `mode` la khong duoc tinh vao `trust` / `session_count` / `sessions_today` / `days_active`.
 - Session `warm` trong ngay -> `run_post_review_warm` tra `SKIPPED_TODAY` (cap 1 phien/ngay tinh ca warm).
 
@@ -76,9 +76,39 @@ assert dung dieu nay, chay: `python -m pytest tests/unit/test_pool_email_unique.
 Luu y migration `0012`: QA DB duoc dung bang `create_all` + `stamp head` nen phan DELETE gop
 case-duplicate cua `0012` chua tung chay that. Muon test migration: dung mot DB probe rieng
 (`createdb yf_probe`), `stamp 0011`, chen 2 row duplicate khac hoa/thuong, roi `upgrade head`.
-**Tren DB co du lieu that: chay `scripts\backup_postgres.ps1` lay dump TRUOC khi upgrade** (0012 co DELETE).
 
-## 6. Mau bao cao
+## 6. Trien khai migration len DB co du lieu that (quy tac, khong bo qua buoc nao)
+
+Migration co `DELETE` (vd `0012` gop case-duplicate) thi phai theo dung thu tu sau.
+**Backup ma khong restore lai duoc thi chua co gi.**
+
+1. Backup (bat buoc, phai co file dump > 0 byte):
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\backup_postgres.ps1
+   ```
+   File dump: `C:\pgbackup\yelp_factory_<timestamp>.dump`; script ghi them
+   `env_keys_<timestamp>.txt` chi chua **ten key**, khong co gia tri - `.env` phai luu rieng.
+2. Kiem tra dump phuc hoi duoc (khong tin "co file dump" la du):
+   ```powershell
+   set PGPASSWORD=postgres
+   data\pg\pgsql\bin\createdb.exe -h 127.0.0.1 -p 5433 -U postgres yf_restore_probe
+   data\pg\pgsql\bin\pg_restore.exe -h 127.0.0.1 -p 5433 -U postgres -d yf_restore_probe (Get-ChildItem C:\pgbackup\yelp_factory_*.dump | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+   data\pg\pgsql\bin\psql.exe -h 127.0.0.1 -p 5433 -U postgres -d yf_restore_probe -tAc "select count(*) from information_schema.tables where table_schema='public'"
+   ```
+   Ky vong: so bang bang voi DB nguon (QA hien tai: **28** bang), va
+   `select version_num from alembic_version` trong DB vua restore khop DB nguon.
+3. Dry-run migration tren DB probe (KHONG dung DB that): `createdb yf_probe` -> `stamp 0011` ->
+   `upgrade head` -> kiem tra `pg_indexes` co `uq_email_pool_mailbox_email_lower`.
+4. Upgrade DB that: `python -m alembic upgrade head`.
+5. Sau upgrade: `python -m cli db-check` -> `ok: true`, `drift: null`; `pg_indexes` -> co index lower-unique.
+6. Rollback: `python -m alembic downgrade 0011`, hoac restore lai tu dump buoc 1.
+7. Don dep DB probe: `drop database yf_restore_probe;` va `drop database yf_probe;`.
+
+Da verify tren may QA (03:49, 10/11): `backup_postgres.ps1` chay exit 0 -> dump 53.834 byte,
+152 TOC entry, Postgres 16.6; `pg_restore -l` doc; restore round-trip vao `yf_restore_probe` ra
+28 table khop het, `alembic_version = 0012_email_pool_lower_unique` khop DB nguon.
+
+## 7. Mau bao cao
 
 ```
 Moi truong: <repo path>, PostgreSQL <version>, port 5433
