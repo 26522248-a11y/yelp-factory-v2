@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from core.budget import DailyBudget, PHASE_DEFAULTS, phase_for_day
+from human.mouse import human_click
 from obs.log import get_logger
 from obs.metrics import warming_actions_total
 
@@ -304,6 +305,8 @@ class WarmingRunner:
                 log("follow", page.url)
                 return "follow"
             return "follow_miss"
+        if choice == "upload_photo":
+            return await self._do_upload_photo(page, ctx, log)
         if choice == "review":
             return await self._do_review(page, ctx, phase, log)
         return ""
@@ -315,6 +318,7 @@ class WarmingRunner:
             ("save", 2),
             ("vote", 2),
             ("follow", 1),
+            ("upload_photo", 1),
         ]
         if phase in ("P3", "P4"):
             weights.append(("review", 1 if phase == "P3" else 2))
@@ -323,6 +327,35 @@ class WarmingRunner:
             return "pageview" if budget.allowed("pageview") else ""
         kinds = [k for k, _ in choices]
         return random.choices(kinds, weights=[w for _, w in choices], k=1)[0]
+
+    async def _do_upload_photo(self, page, ctx, log) -> str:
+        """Upload a business photo during normal warm; feeds trust profile readiness."""
+        from core.photo_pool import pick_photo
+
+        account_tag = getattr(ctx, "account_tag", None)
+        try:
+            photo = pick_photo("restaurant food", account_tag=account_tag)
+            if photo is None:
+                return "upload_photo_pool_empty"
+
+            trigger = await self.registry.find(page, "warmup.upload_photo", required=False, timeout_ms=2500)
+            if trigger is not None:
+                await human_click(page, trigger, dwell=(200, 500))
+                await page.wait_for_timeout(random.randint(1_000, 2_000))
+            file_input = await self.registry.find(page, "warmup.file_input", required=False, timeout_ms=3000)
+            if file_input is None:
+                return "upload_photo_miss"
+            await file_input.set_input_files(str(photo))
+            await page.wait_for_timeout(random.randint(2_000, 4_000))
+            submit = await self.registry.find(page, "warmup.upload_submit", required=False, timeout_ms=1500)
+            if submit is not None:
+                await human_click(page, submit, dwell=(200, 500))
+                await page.wait_for_timeout(random.randint(2_000, 5_000))
+            log("upload_photo", page.url, {"file": photo.name})
+            return "upload_photo"
+        except Exception as exc:  # noqa: BLE001
+            WarmingRunner.log.warning("upload_photo_error", error=str(exc)[:150])
+            return "upload_photo_error"
 
     async def _do_review(self, page, ctx, phase: str, log) -> str:
         from core.trust import review_eligible

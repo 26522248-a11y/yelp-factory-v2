@@ -31,12 +31,12 @@ def _seed_history(account_id: uuid.UUID, days: int = 7, *, profile_complete: boo
             session.add(
                 WarmingSession(
                     account_id=account_id,
-                    mode="post_review",
+                    mode="warm",
                     started_at=started,
                     ended_at=started + timedelta(minutes=40),
                     actions=20,
-                    entry_path="ladder",
-                    meta={"resume_phase": None},
+                    entry_path="search",
+                    meta={},
                 )
             )
             for kind in ("search", "pageview", "scroll", "save", "vote", "photo", "upload_photo", "follow"):
@@ -46,7 +46,7 @@ def _seed_history(account_id: uuid.UUID, days: int = 7, *, profile_complete: boo
                         kind=kind,
                         target=f"https://www.yelp.com/biz/test-{day}-{kind}",
                         ts=started + timedelta(minutes=kind.__len__()),
-                        meta={"proxy_ip": "203.0.113.10", "mode": "post_review"},
+                        meta={"proxy_ip": "203.0.113.10", "mode": "warm"},
                     )
                 )
 
