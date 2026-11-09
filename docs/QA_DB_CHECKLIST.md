@@ -1,4 +1,4 @@
-# Checklist QA: chay full suite + E-93 tren DB that (may QA)
+# Checklist QA: chay full suite + E-93/E-95 tren DB that (may QA)
 
 ## 0. Moi truong (da dung san tren may QA)
 
@@ -28,6 +28,7 @@ python -m pytest tests -q
 - Bao cao dung so **thuc chay**: passed / failed / skipped + dong cuoi cua pytest.
 - `skipped > 0` => KHONG duoc coi la pass (skip = DB chua that).
 - Fail thì chay lai file: `python -m pytest tests/<file> -q -x`.
+- Baseline vong nghiem thu trust (HEAD `daff69d`): **327 passed / 0 failed / 0 skipped**.
 
 ## 3. E-93 (trust reachable)
 
@@ -37,11 +38,33 @@ python -m pytest tests/cases/E-93_trust_reachable.py -q -s
 
 Ky vong: pass, gia tri trust >= 75, va seed `mode="warm"` (khong seed san `post_review`).
 
-## 4. Mau bao cao
+## 4. E-95 (warm gate counting)
+
+```powershell
+python -m pytest tests/cases/E-95_warm_gate_counting.py -q -s
+```
+
+Ky vong: **6 passed**, khong con xfail (xfail = gate chua khep kin).
+
+Chay chung E-93 + E-95 (dung cho lan chay xac nhan):
+
+```powershell
+python -m pytest tests/cases/E-93_trust_reachable.py tests/cases/E-95_warm_gate_counting.py -q
+```
+
+Ky vong: **9 passed** (E-93 3 + E-95 6).
+
+Pham vi ma E-95 khoa (acc chi co session `mode="warm"`):
+- `session_count()` > 0 va `sessions_today()` >= 1 (khong con = 0 nhu truoc khi sua).
+- Unlock ladder vuot P0 (vd `[P0,P1,P2,P4]`), khong chỉ `P0`.
+- Row `meta.seed` va `mode` la khong duoc tinh vao `trust` / `session_count` / `sessions_today` / `days_active`.
+- Session `warm` trong ngay -> `run_post_review_warm` tra `SKIPPED_TODAY` (cap 1 phien/ngay tinh ca warm).
+
+## 5. Mau bao cao
 
 ```
 Moi truong: <repo path>, PostgreSQL <version>, port 5433
 Lenh: python -m pytest tests -q
 Ket qua: X passed, Y failed, Z skipped trong Ns
-E-93: <pass/fail> (trust thuc te)
+E-93 + E-95: <pass/fail> (ky vong 9 passed)
 ```
