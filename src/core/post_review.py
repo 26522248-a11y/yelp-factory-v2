@@ -11,6 +11,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
+from core.trust import WARM_MODES
 from db.models import Account, WarmingPlan, WarmingSession
 from db.session import session_scope
 from obs.log import get_logger
@@ -152,15 +153,18 @@ def sessions_today(account_id: uuid.UUID, *, now: datetime | None = None, tz_nam
     local = now.astimezone(tz)
     day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     with session_scope() as session:
-        return (
-            session.query(WarmingSession)
+        rows = (
+            session.query(WarmingSession.meta)
             .filter(
                 WarmingSession.account_id == account_id,
-                WarmingSession.mode == PLAN_STATUS,
+                WarmingSession.mode.in_(WARM_MODES),
                 WarmingSession.started_at >= day_start,
             )
-            .count()
+            .all()
         )
+    # same rule as warm evidence (core/trust.py): a seeded/imported row is not a
+    # session the account actually ran, and both ladders count as real cadence.
+    return sum(1 for (meta,) in rows if not (meta or {}).get("seed"))
 
 
 def days_active(account_id: uuid.UUID) -> int:
@@ -169,7 +173,7 @@ def days_active(account_id: uuid.UUID) -> int:
             session.query(WarmingSession.started_at)
             .filter(
                 WarmingSession.account_id == account_id,
-                WarmingSession.mode.in_([PLAN_STATUS, "warm"]),
+                WarmingSession.mode.in_(WARM_MODES),
             )
             .all()
         )
@@ -177,9 +181,22 @@ def days_active(account_id: uuid.UUID) -> int:
 
 
 def session_count(account_id: uuid.UUID) -> int:
-    """Real post-review sessions run so far (seed rows do not count: meta.seed=true)."""
+    """Real sessions run so far on either ladder (warm + post_review), seed rows excluded.
+
+    Counting only ``post_review`` made a normally-warming account report 0 sessions, so
+    the P0->P4 ladder gate (``unlocked_phases_by_session``) never left P0 and the daily
+    cap in ``orchestrator.run_post_review_warm`` read 0 as well. Both ladders are real
+    work; ``meta.seed`` rows are not (same definition as warm evidence in core/trust.py).
+    """
     with session_scope() as session:
-        rows = session.query(WarmingSession.meta).filter(WarmingSession.account_id == account_id, WarmingSession.mode == PLAN_STATUS).all()
+        rows = (
+            session.query(WarmingSession.meta)
+            .filter(
+                WarmingSession.account_id == account_id,
+                WarmingSession.mode.in_(WARM_MODES),
+            )
+            .all()
+        )
     return sum(1 for (meta,) in rows if not (meta or {}).get("seed"))
 
 
