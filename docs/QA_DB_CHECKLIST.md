@@ -82,6 +82,17 @@ case-duplicate cua `0012` chua tung chay that. Muon test migration: dung mot DB 
 Migration co `DELETE` (vd `0012` gop case-duplicate) thi phai theo dung thu tu sau.
 **Backup ma khong restore lai duoc thi chua co gi.**
 
+**CANH BAO - `alembic upgrade head` KHONG chay duoc tren DB trong / DB moi.**
+
+Chain migration chet o `0002_account_profile` voi `DuplicateColumn: column "gender" of
+relation "accounts" already exists` (vi `0001_initial` tao schema theo model hien tai;
+`src/cli.py` cung ghi ro: "create the current schema and stamp the head instead of
+replaying the broken chain").
+
+- May moi / DB trong: dung `python -m cli db-init` (create_all + stamp head).
+- Muon chay migration THAT: phai `stamp 0011` tren DB da co schema roi moi `upgrade head`;
+  KHONG bao gio chay `upgrade head` tren DB trong.
+- Sua `0001` de replay duoc ca chain la quyet dinh cua @MINH/@DUC, khong tu lam tren may QA.
 0. Migration da commit vao git chua (khong deploy thang tu working tree):
    ```powershell
    git ls-files migrations/versions/
@@ -108,12 +119,27 @@ Migration co `DELETE` (vd `0012` gop case-duplicate) thi phai theo dung thu tu s
    `upgrade head` -> kiem tra `pg_indexes` co `uq_email_pool_mailbox_email_lower`.
 4. Upgrade DB that: `python -m alembic upgrade head`.
 5. Sau upgrade: `python -m cli db-check` -> `ok: true`, `drift: null`; `pg_indexes` -> co index lower-unique.
-6. Rollback: `python -m alembic downgrade 0011`, hoac restore lai tu dump buoc 1.
-7. Don dep DB probe: `drop database yf_restore_probe;` va `drop database yf_probe;`.
+6. Rollback (co canh bao):
+   ```powershell
+   set PGPASSWORD=postgres&& data\pg\pgsql\bin\pg_dump.exe -h 127.0.0.1 -p 5433 -U postgres -d yelp_factory -t email_pool -f C:\pgbackup\email_pool_before_downgrade.sql
+   python -m alembic downgrade 0011
+   ```
+   **Khi alembic da ve `0011` thi KHONG duoc chay traffic that**: index unique da bi drop,
+   app co the ghi them row case-trung, va lan `upgrade` sau se **tinh xoa am tham** cac row
+   do (khong canh bao, co the mat du lieu). Rollback an toan: restore lai dump buoc 1,
+   khong chi `downgrade`.
+7. Neu `upgrade` bao `ForeignKeyViolation` (row case-duplicate dang bi `accounts` tro toi):
+   **KHONG xoa tay** de cho qua - migration co chu dong abort va giu nguyen du lieu.
+   Phai tro account sang row trung khop truoc, roi chay lai `upgrade head`.
+8. Don dep DB probe: `drop database yf_restore_probe;` va `drop database yf_probe;`.
 
 Da verify tren may QA (03:49, 10/11): `backup_postgres.ps1` chay exit 0 -> dump 53.834 byte,
 152 TOC entry, Postgres 16.6; `pg_restore -l` doc; restore round-trip vao `yf_restore_probe` ra
 28 table khop het, `alembic_version = 0012_email_pool_lower_unique` khop DB nguon.
+Da verify them tren may QA (probe rieng cua @AN: DB `yf_p5` / `yf_p6`, khong dung DB that):
+- FK-abort dung: `upgrade head` chet voi `ForeignKeyViolation`, alembic kiet `0011`, du lieu nguyen (khong xoa am tham).
+- `downgrade 0012 -> 0011` chay sach (`idx_after_down = 0`), re-upgrade lap lai duoc.
+- Ca "chen row case-trung o `0011` roi `upgrade`" bi gop xoa am tham -> quy tac buoc 6.
 
 ## 7. Mau bao cao
 
@@ -123,4 +149,5 @@ Lenh: python -m pytest tests -q
 Ket qua: X passed, Y failed, Z skipped trong Ns
 E-93 + E-95: <pass/fail> (ky vong 9 passed)
 Mailbox unique: index `uq_email_pool_mailbox_email_lower` co trong pg_indexes: <yes/no>
+Rollback window: da dump rieng bang `email_pool` truoc downgrade, khong chay traffic o `0011`: <yes/no>
 ```
