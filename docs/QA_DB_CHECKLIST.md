@@ -142,6 +142,23 @@ Da verify them tren may QA (probe rieng cua @AN: DB `yf_p5` / `yf_p6`, khong dun
 - `downgrade 0012 -> 0011` chay sach (`idx_after_down = 0`), re-upgrade lap lai duoc.
 - Ca "chen row case-trung o `0011` roi `upgrade`" bi gop xoa am tham -> quy tac buoc 6.
 
+### 6b. So sanh schema hai DB bang fingerprint (khong phu thuoc alembic)
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schema_fingerprint.ps1 -DbName yf_chain_probe -CompareTo yelp_factory
+```
+
+Ky vong: `DIFF: 0` va cung `Fingerprint`. Baseline schema head `0012` (bo qua `alembic_version`):
+`be09a238c9108890997e7bfc042ad6a8c8df098f7640d8072dfc5cc82f1b4f15` (27 bang / 52 index / 60 constraint).
+
+Dung script nay sau khi viet lai `0001` de chung minh replay ca chain ra dung schema, va de bat cac object
+khong khai bao trong `models.py` (db-check chi so model voi DB). Ket qua verify tren may QA:
+- `create_all` tren DB trong vs `yelp_factory` -> `DIFF: 0` (schema model = schema head).
+- drop `uq_email_pool_mailbox_email_lower` tren probe -> `DIFF: 1`, liet ke dung index bi thieu.
+- `db-check` **van bat** index do bi thieu (tra `ok:false` + `add_index uq_email_pool_mailbox_email_lower`)
+  mien la DB da `stamp`; DB chua stamp thi tra `ok:false` voi "Target database is not up to date".
+  => `db-check` khong mu voi functional index nhu lo ngai, nhung no doi DB da stamp va no chi so voi model.
+
 ## 7. Mau bao cao
 
 ```
