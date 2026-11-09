@@ -467,6 +467,11 @@ class ReviewAttempt(Base):
 
 class EmailPool(Base):
     __tablename__ = "email_pool"
+    __table_args__ = (
+        # One inbox = one account. The plain UNIQUE on mailbox_email is case-sensitive,
+        # so it is backed by a functional unique index on lower(mailbox_email).
+        Index("uq_email_pool_mailbox_email_lower", text("lower(mailbox_email)"), unique=True),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_uuid)
     mailbox_email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)

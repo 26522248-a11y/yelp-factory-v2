@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from sqlalchemy import case, func, select, text
+from sqlalchemy.exc import IntegrityError
 
 from core.crypto import SecretBox
 from core.importers import ParsedEmail, ParsedProxy
@@ -25,23 +26,30 @@ DEFAULT_MAX_PER_PROXY = 2
 def import_emails(rows: Iterable[ParsedEmail], *, source_file: str = "", box: SecretBox | None = None) -> dict:
     box = box or SecretBox()
     inserted = 0
+    duplicates = 0
     with session_scope() as session:
         for row in rows:
-            session.add(
-                EmailPool(
-                    mailbox_email=row.mailbox_email,
-                    mailbox_password_enc=box.encrypt(row.mailbox_password),
-                    refresh_token_enc=box.encrypt(row.refresh_token),
-                    client_id=row.client_id,
-                    alias=row.alias,
-                    domain=row.alias.split("@")[-1],
-                    status="available",
-                    source_file=source_file,
-                )
-            )
-            inserted += 1
-    log.info("emails_imported", count=inserted, file=source_file)
-    return {"inserted": inserted}
+            try:
+                # Savepoint per row: one duplicate mailbox/alias must not abort the batch.
+                with session.begin_nested():
+                    session.add(
+                        EmailPool(
+                            mailbox_email=row.mailbox_email,
+                            mailbox_password_enc=box.encrypt(row.mailbox_password),
+                            refresh_token_enc=box.encrypt(row.refresh_token),
+                            client_id=row.client_id,
+                            alias=row.alias,
+                            domain=row.alias.split("@")[-1],
+                            status="available",
+                            source_file=source_file,
+                        )
+                    )
+                    session.flush()
+                inserted += 1
+            except IntegrityError:
+                duplicates += 1
+    log.info("emails_imported", count=inserted, duplicates=duplicates, file=source_file)
+    return {"inserted": inserted, "duplicates_in_db": duplicates}
 
 
 def import_proxies(rows: Iterable[ParsedProxy], *, source_file: str = "", box: SecretBox | None = None) -> dict:
