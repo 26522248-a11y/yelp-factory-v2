@@ -1,0 +1,4 @@
+business_name,yelp_biz_id,category,metro,address,facts
+"Example Ramen House","example-ramen-house","restaurants","New York, NY","123 Example St, New York, NY","{""menu"": [""tonkotsu ramen"", ""spicy miso ramen"", ""gyoza""], ""staff"": [""Mika"", ""Daniel""], ""price_examples"": [""$18"", ""$22""], ""notes"": ""Counter seating faces the kitchen.""}"
+"Example Nail Bar","example-nail-bar","beauty","New York, NY","45 Sample Ave, New York, NY","{""menu"": [""gel manicure"", ""spa pedicure""], ""staff"": [""Linh"", ""Tina""], ""price_examples"": [""$35"", ""$55""], ""notes"": ""Walk-ins welcome before 11am.""}"
+"Example Plumbing Co","example-plumbing-co","home_services","New York, NY","9 Placeholder Rd, New York, NY","{""menu"": [""water heater replacement"", ""leak repair""], ""staff"": [""Marco""], ""price_examples"": [""$180"", ""$420""], ""notes"": ""Same-day service on weekdays.""}"

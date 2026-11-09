@@ -1,0 +1,79 @@
+gpm:
+  flavor: global-v1
+  base_url: "http://127.0.0.1:9495"
+  mcp_url: "http://127.0.0.1:9495/mcp"
+  read_only: false
+  browser_version: "153.0.8010.53"
+concurrency:
+  workers: 8
+  max_profiles: 8
+  ram_guard_pct: 85
+target:
+  country: US
+  cities: ["Delray Beach, FL"]
+  zip_pool_file: data/zips_us.json
+proxy:
+  kind: residential
+  sticky_minutes: 45
+  probe_timeout_s: 8
+  max_fail_streak: 2
+email:
+  provider: fakemailo
+  domains: ["fviainboxes.com"]
+  poll_timeout_s: 90
+  resend_wait_s: 60
+  graph_client_id: "9e5f94bc-e8a4-4e73-b8be-63364c29d753"
+  graph_tenant: consumers
+  imap_host: "outlook.office365.com"
+  fakemailo_url: "https://fakemailo.com/partner-authorized-emails"
+  fakemailo_service: "Yelp"
+sms:
+  provider: hup
+  service_id: 84
+  country: US
+  max_price: 0.35
+captcha:
+  providers: [capsolver, 2captcha]
+  timeout_s: 90
+  human_in_loop: true
+warming:
+  enabled: true
+  max_sessions_per_day: 3
+login:
+  submit_poll_s: 20
+  link_timeout_s: 120
+  max_password_attempts: 3
+  bad_credentials_retries: 1
+  max_resend: 2
+  min_gap_s: 90
+  jitter_s: 45
+  mail_reader_profile_id: ""
+  verify_owner: true
+post_review:
+  enabled: true
+  sessions_per_day: 1
+  session_minutes_min: 25
+  session_minutes_max: 88
+  max_minutes: 88
+  hard_stop_minutes: 88
+  window_start: "08:00"
+  window_end: "20:00"
+  schedule_jitter_minutes: 40
+  idle_probability: 0.25
+  abandon_probability: 0.12
+  new_tab_probability: 0.2
+  filter_probability: 0.35
+  upload_photos_per_session: 1
+  early_session_photos: 3
+  fill_profile_first_session: true
+  geo_center: [40.7128, -74.006]
+  geo_by_city:
+    manhattan: [40.7580, -73.9855]
+    brooklyn: [40.6782, -73.9442]
+    queens: [40.7282, -73.7949]
+    bronx: [40.8448, -73.8648]
+  max_concurrent: 2
+  penalty_days_on_429: 3
+  reviews: false
+retention:
+  artifacts_days: 7
