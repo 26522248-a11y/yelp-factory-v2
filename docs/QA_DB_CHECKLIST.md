@@ -82,6 +82,13 @@ case-duplicate cua `0012` chua tung chay that. Muon test migration: dung mot DB 
 Migration co `DELETE` (vd `0012` gop case-duplicate) thi phai theo dung thu tu sau.
 **Backup ma khong restore lai duoc thi chua co gi.**
 
+0. Migration da commit vao git chua (khong deploy thang tu working tree):
+   ```powershell
+   git ls-files migrations/versions/
+   ```
+   Ky vong: thay `0012_email_pool_lower_unique.py`. Neu thieu -> migration chua nam trong git,
+   `upgrade` tren may khac se khong co gi de chay: commit truoc khi deploy.
+
 1. Backup (bat buoc, phai co file dump > 0 byte):
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\backup_postgres.ps1
