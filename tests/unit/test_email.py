@@ -118,3 +118,69 @@ def test_corrupt_token_file_falls_back_to_config(settings, tmp_path):
     provider = build_provider(settings)
     assert isinstance(provider, GraphMailbox)
     assert provider.refresh_token == "cfg-token"
+
+
+def test_unreadable_blob_is_quarantined_and_reported(settings, tmp_path, capsys):
+    """A blob encrypted with another master key must not be reused silently (AN finding 2)."""
+    from adapters.email import GraphMailbox, build_provider
+
+    settings.email.provider = "ms_graph"
+    settings.email.graph_client_id = "client-id"
+    settings.email.graph_refresh_token = "cfg-token"
+    settings.artifacts_dir = str(tmp_path / "artifacts")
+
+    path = _token_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"blob-encrypted-with-the-old-master-key")
+
+    provider = build_provider(settings)
+    assert isinstance(provider, GraphMailbox)
+    assert provider.refresh_token == "cfg-token"
+    assert not path.exists(), "the unreadable blob must be moved out of the way"
+    quarantined = list(path.parent.glob("email_refresh_token.corrupt-*.bin"))
+    assert len(quarantined) == 1
+    out = capsys.readouterr().out
+    assert "refresh_token_unreadable" in out
+
+
+def test_legacy_plaintext_txt_is_deleted_when_blob_exists(tmp_path):
+    """A stale plaintext .txt must never survive next to a good blob (AN finding 3)."""
+    from adapters.email import REFRESH_TOKEN_AAD, _load_refresh_token
+    from core.crypto import SecretBox
+
+    path = _token_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(SecretBox().encrypt("blob-token", aad=REFRESH_TOKEN_AAD))
+    legacy = path.with_suffix(".txt")
+    legacy.write_text("legacy-token", encoding="utf-8")
+
+    assert _load_refresh_token(path) == "blob-token"
+    assert not legacy.exists(), "plaintext legacy token must be removed from disk"
+    kept = path.with_suffix(".legacy.bin")
+    assert kept.exists()
+    assert SecretBox().decrypt(kept.read_bytes(), aad=REFRESH_TOKEN_AAD) == "legacy-token"
+
+
+def test_legacy_plaintext_txt_is_migrated_when_no_blob(tmp_path):
+    from adapters.email import REFRESH_TOKEN_AAD, _load_refresh_token
+    from core.crypto import SecretBox
+
+    path = _token_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    legacy = path.with_suffix(".txt")
+    legacy.write_text("legacy-token", encoding="utf-8")
+
+    assert _load_refresh_token(path) == "legacy-token"
+    assert not legacy.exists()
+    assert SecretBox().decrypt(path.read_bytes(), aad=REFRESH_TOKEN_AAD) == "legacy-token"
+
+
+def test_token_path_ignores_the_current_working_directory(settings, tmp_path, monkeypatch):
+    """A relative artifacts_dir must resolve against the repo, not the cwd (AN finding 3)."""
+    from adapters.email import ROOT, _token_file
+
+    settings.artifacts_dir = "artifacts"
+    monkeypatch.chdir(tmp_path)
+    expected = ROOT / "data" / "email_refresh_token.bin"
+    assert _token_file(settings) == expected
+    assert _token_file(settings).is_absolute()

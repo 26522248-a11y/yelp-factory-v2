@@ -10,7 +10,9 @@ import asyncio
 import base64
 import html as html_mod
 import imaplib
+import os
 import re
+import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -32,30 +34,94 @@ TOKEN_URL = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
 # column cannot be replayed as a refresh token.
 REFRESH_TOKEN_AAD = b"email_refresh_token"
 
+# Repo root: a relative artifacts_dir must resolve against the project, not the cwd.
+ROOT = Path(__file__).resolve().parents[2]
 
-def _load_refresh_token(path: Path) -> str:
-    """Return the persisted Graph refresh token, or "" when absent/unreadable.
 
-    The token is a credential, so it is stored AES-GCM encrypted with YF_MASTER_KEY.
-    A missing key, a rotated key or a corrupted/plaintext file all degrade to "no token"
-    so the caller falls back to the configured ``graph_refresh_token`` instead of crashing.
-    A legacy plaintext ``email_refresh_token.txt`` (pre-SecretBox layout) is migrated once.
+def _token_file(settings) -> Path:
+    """Absolute path of the token blob: a relative artifacts_dir must not depend on the cwd."""
+    base = Path(settings.artifacts_dir)
+    if not base.is_absolute():
+        base = ROOT / base
+    return base.parent / "data" / "email_refresh_token.bin"
+
+
+def _restrict_to_owner(path: Path) -> None:
+    """Best effort: keep the token blob readable by the current user only.
+
+    ``chmod`` is a no-op for ACLs on Windows (measured: mode stays 0o666 and BUILTIN\\Users
+    keeps read access), so the ACL is tightened explicitly there.
     """
     try:
-        if path.exists():
-            return SecretBox().decrypt(path.read_bytes(), aad=REFRESH_TOKEN_AAD).strip()
-        legacy = path.with_suffix(".txt")
-        if legacy.exists():
-            token = legacy.read_text(encoding="utf-8").strip()
-            if token:
-                path.write_bytes(SecretBox().encrypt(token, aad=REFRESH_TOKEN_AAD))
-                path.chmod(0o600)
-                legacy.unlink(missing_ok=True)
-                log.info("refresh_token_migrated_to_secretbox")
-            return token
+        if os.name == "nt":
+            user = os.environ.get("USERNAME") or ""
+            if user:
+                subprocess.run(
+                    ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+                    check=False,
+                    capture_output=True,
+                    timeout=10,
+                )
+        else:
+            path.chmod(0o600)
+    except Exception:  # noqa: BLE001 - hardening must never be fatal
+        log.warning("refresh_token_permissions_not_restricted", path=str(path))
+
+
+def _consume_legacy_token(path: Path, *, have_blob: bool) -> str:
+    """Encrypt and then delete a legacy plaintext ``email_refresh_token.txt``.
+
+    The plaintext file is removed even when a valid blob exists - a credential must never
+    stay readable on disk. When a good blob is already present the legacy value is kept
+    aside encrypted instead of overwriting the newer token.
+    """
+    legacy = path.with_suffix(".txt")
+    if not legacy.exists():
+        return ""
+    try:
+        raw = legacy.read_text(encoding="utf-8").strip()
+        if raw:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            target = path.with_suffix(".legacy.bin") if have_blob else path
+            target.write_bytes(SecretBox().encrypt(raw, aad=REFRESH_TOKEN_AAD))
+            _restrict_to_owner(target)
+            log.warning("refresh_token_legacy_plaintext_migrated", target=target.name)
+        legacy.unlink(missing_ok=True)
+        return "" if have_blob else raw
     except Exception:  # noqa: BLE001 - never let a bad token file break provider setup
-        log.warning("refresh_token_load_failed")
-    return ""
+        log.error("refresh_token_legacy_migration_failed")
+        return ""
+
+
+def _load_refresh_token(path: Path) -> str:
+    """Return the persisted Graph refresh token, or "" when there is none.
+
+    The token is a credential, so it is stored AES-GCM encrypted with YF_MASTER_KEY.
+    An absent file means "no token" (normal: the caller uses ``graph_refresh_token``).
+    A blob that exists but cannot be decrypted is NOT normal - the master key was rotated or
+    the file is corrupt - and silently reusing the stale configured token only surfaces much
+    later as ``NoVerificationMail``. So report it at ERROR, quarantine the unreadable blob,
+    and then fall back.
+    """
+    token = ""
+    if path.exists():
+        try:
+            token = SecretBox().decrypt(path.read_bytes(), aad=REFRESH_TOKEN_AAD).strip()
+        except Exception:  # noqa: BLE001 - report the failure, never let it break setup
+            log.error(
+                "refresh_token_unreadable",
+                reason="bad_master_key_or_corrupt_blob",
+                action="quarantined blob, falling back to config graph_refresh_token",
+            )
+            try:
+                path.replace(path.with_suffix(f".corrupt-{int(time.time())}.bin"))
+            except Exception:  # noqa: BLE001
+                log.warning("refresh_token_quarantine_failed")
+            token = ""
+    # Always sweep a legacy plaintext .txt, even when the blob is good.
+    legacy_token = _consume_legacy_token(path, have_blob=bool(token))
+    return token or legacy_token
+
 
 VERIFY_LINK_RE = re.compile(
     r"https?://(?:www\.)?yelp\.[a-z.]+/(?:signup[/?][^\s\"'<>]*|confirm[^\s\"'<>]*|verify[^\s\"'<>]*)",
@@ -410,14 +476,14 @@ def build_provider(settings) -> EmailProvider:
     # Microsoft rotates the refresh token on every exchange; keep the newest one on disk so
     # a crashed worker does not invalidate the mailbox for the next run. It is a credential,
     # so it is written AES-GCM encrypted (SecretBox) - never in clear text.
-    token_file = Path(settings.artifacts_dir).parent / "data" / "email_refresh_token.bin"
+    token_file = _token_file(settings)
     refresh_token = _load_refresh_token(token_file) or cfg.graph_refresh_token
 
     def persist(new_token: str) -> None:
         try:
             token_file.parent.mkdir(parents=True, exist_ok=True)
             token_file.write_bytes(SecretBox().encrypt(new_token, aad=REFRESH_TOKEN_AAD))
-            token_file.chmod(0o600)
+            _restrict_to_owner(token_file)
         except Exception:  # noqa: BLE001 - a failed write must not kill the run
             log.warning("refresh_token_persist_failed")
 
