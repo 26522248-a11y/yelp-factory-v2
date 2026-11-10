@@ -558,6 +558,24 @@ def cmd_db_check(args) -> int:
         return 1
 
 
+def cmd_key_gen(args) -> int:
+    """Print a fresh YF_MASTER_KEY to stdout.
+
+    Deliberately does NOT read or write .env: the operator pastes the value. Printing to
+    stdout (not a JSON envelope) so it can be piped straight into a secret manager.
+    """
+    from core.crypto import SecretBox, generate_master_key
+
+    try:
+        key = generate_master_key(args.bytes)
+        SecretBox(key_b64=key)  # prove the value we print is usable by the real validator
+    except (RuntimeError, ValueError) as exc:  # noqa: BLE001
+        _print({"error": "key_gen_failed", "detail": str(exc)[:200]})
+        return 1
+    print(key)
+    return 0
+
+
 def cmd_schedule(args) -> int:
     from core.scheduler import bootstrap, run_due, scheduler_loop
 
@@ -1089,6 +1107,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("pool-audit", help="metro/ASN/proxy binding + derived trust audit").set_defaults(func=cmd_pool_audit)
     sub.add_parser("db-check", help="verify the DB schema matches alembic head (drift detection)").set_defaults(func=cmd_db_check)
+
+    key_gen = sub.add_parser("key-gen", help="print a fresh YF_MASTER_KEY (does not touch .env)")
+    key_gen.add_argument("--bytes", type=int, default=32, choices=[16, 24, 32], help="key size in bytes (default 32)")
+    key_gen.set_defaults(func=cmd_key_gen)
 
     account = sub.add_parser("account", help="manual account state operations")
     account.add_argument("account_action", choices=["show", "set-state", "stop-profile"])

@@ -40,5 +40,12 @@ class SecretBox:
         return self._aead.decrypt(blob[:12], blob[12:], aad).decode("utf-8")
 
 
-def generate_master_key() -> str:
-    return base64.urlsafe_b64encode(AESGCM.generate_key(bit_length=256)).decode("ascii")
+def generate_master_key(byte_length: int = 32) -> str:
+    """Return a fresh urlsafe-base64 master key (16/24/32 bytes, AES-128/192/256).
+
+    Single source of truth for key shape: whatever this returns must satisfy SecretBox, so
+    `yf key-gen` and the docs never drift from the validator.
+    """
+    if byte_length not in (16, 24, 32):
+        raise ValueError("master key must be 16, 24 or 32 bytes")
+    return base64.urlsafe_b64encode(AESGCM.generate_key(bit_length=byte_length * 8)).decode("ascii")
