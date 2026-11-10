@@ -74,18 +74,37 @@ def _consume_legacy_token(path: Path, *, have_blob: bool) -> str:
     The plaintext file is removed even when a valid blob exists - a credential must never
     stay readable on disk. When a good blob is already present the legacy value is kept
     aside encrypted instead of overwriting the newer token.
+
+    An unusable ``YF_MASTER_KEY`` is reported as its own error and leaves the plaintext file
+    in place: that is a configuration mistake (worker/CI started without the env var), not a
+    corrupt file, and deleting the only readable copy would make it unrecoverable.
     """
     legacy = path.with_suffix(".txt")
     if not legacy.exists():
         return ""
     try:
         raw = legacy.read_text(encoding="utf-8").strip()
-        if raw:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            target = path.with_suffix(".legacy.bin") if have_blob else path
-            target.write_bytes(SecretBox().encrypt(raw, aad=REFRESH_TOKEN_AAD))
-            _restrict_to_owner(target)
-            log.warning("refresh_token_legacy_plaintext_migrated", target=target.name)
+    except Exception:  # noqa: BLE001 - never let a bad token file break provider setup
+        log.error("refresh_token_legacy_unreadable")
+        return ""
+    if not raw:
+        legacy.unlink(missing_ok=True)
+        return ""
+    try:
+        box = SecretBox()
+    except Exception:  # noqa: BLE001 - YF_MASTER_KEY missing, blank or malformed
+        log.error(
+            "refresh_token_legacy_key_missing",
+            reason="YF_MASTER_KEY missing, blank or malformed",
+            action="kept the plaintext .txt on disk; delete it by hand before handing the machine over",
+        )
+        return ""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        target = path.with_suffix(".legacy.bin") if have_blob else path
+        target.write_bytes(box.encrypt(raw, aad=REFRESH_TOKEN_AAD))
+        _restrict_to_owner(target)
+        log.warning("refresh_token_legacy_plaintext_migrated", target=target.name)
         legacy.unlink(missing_ok=True)
         return "" if have_blob else raw
     except Exception:  # noqa: BLE001 - never let a bad token file break provider setup
@@ -98,28 +117,46 @@ def _load_refresh_token(path: Path) -> str:
 
     The token is a credential, so it is stored AES-GCM encrypted with YF_MASTER_KEY.
     An absent file means "no token" (normal: the caller uses ``graph_refresh_token``).
-    A blob that exists but cannot be decrypted is NOT normal - the master key was rotated or
-    the file is corrupt - and silently reusing the stale configured token only surfaces much
-    later as ``NoVerificationMail``. So report it at ERROR, quarantine the unreadable blob,
-    and then fall back.
+
+    Two failures must stay distinguishable (AN probe, 11/11):
+
+    * the box cannot be built at all - ``YF_MASTER_KEY`` is missing, blank or malformed
+      (detached worktree, CI, worker started without the env var). The blob on disk is
+      probably fine, so it is left exactly where it is; quarantining it here would destroy
+      the only good copy because of a configuration mistake;
+    * the box builds but ``decrypt`` fails - the master key was rotated or the file is
+      corrupt. That is NOT normal, and silently reusing the stale configured token only
+      surfaces much later as ``NoVerificationMail``, so report it at ERROR, quarantine the
+      unreadable blob, and then fall back.
     """
     token = ""
     if path.exists():
+        box = None
         try:
-            token = SecretBox().decrypt(path.read_bytes(), aad=REFRESH_TOKEN_AAD).strip()
-        except Exception:  # noqa: BLE001 - report the failure, never let it break setup
+            box = SecretBox()
+        except Exception:  # noqa: BLE001 - key missing/blank/malformed: keep the blob
             log.error(
-                "refresh_token_unreadable",
-                reason="bad_master_key_or_corrupt_blob",
-                action="quarantined blob, falling back to config graph_refresh_token",
+                "refresh_token_key_missing",
+                reason="YF_MASTER_KEY missing, blank or malformed",
+                action="blob left in place; falling back to config graph_refresh_token",
             )
+        if box is not None:
             try:
-                path.replace(path.with_suffix(f".corrupt-{int(time.time())}.bin"))
-            except Exception:  # noqa: BLE001
-                log.warning("refresh_token_quarantine_failed")
-            token = ""
-    # Always sweep a legacy plaintext .txt, even when the blob is good.
-    legacy_token = _consume_legacy_token(path, have_blob=bool(token))
+                token = box.decrypt(path.read_bytes(), aad=REFRESH_TOKEN_AAD).strip()
+            except Exception:  # noqa: BLE001 - report the failure, never let it break setup
+                log.error(
+                    "refresh_token_unreadable",
+                    reason="bad_master_key_or_corrupt_blob",
+                    action="quarantined blob, falling back to config graph_refresh_token",
+                )
+                try:
+                    path.replace(path.with_suffix(f".corrupt-{int(time.time())}.bin"))
+                except Exception:  # noqa: BLE001
+                    log.warning("refresh_token_quarantine_failed")
+                token = ""
+    # Always sweep a legacy plaintext .txt, even when the blob is good. ``have_blob`` is the
+    # file, not the decrypted value: an empty token must never let the .txt overwrite a blob.
+    legacy_token = _consume_legacy_token(path, have_blob=path.exists())
     return token or legacy_token
 
 
@@ -470,14 +507,16 @@ def build_provider(settings) -> EmailProvider:
         return ImapMailbox(
             cfg.imap_host, settings.email.domains[0], cfg.graph_client_id, cfg.graph_refresh_token, tenant=cfg.graph_tenant
         )
-    if not cfg.graph_client_id or not cfg.graph_refresh_token:
-        raise EmailError("graph credentials missing", code="email_config")
-
     # Microsoft rotates the refresh token on every exchange; keep the newest one on disk so
     # a crashed worker does not invalidate the mailbox for the next run. It is a credential,
     # so it is written AES-GCM encrypted (SecretBox) - never in clear text.
     token_file = _token_file(settings)
-    refresh_token = _load_refresh_token(token_file) or cfg.graph_refresh_token
+    # Read the blob BEFORE validating the config: while YF_MASTER_KEY is being rotated the
+    # configured token is the dead one and the blob is the live one (AN probe b1, 11/11).
+    token_blob = _load_refresh_token(token_file)
+    if not cfg.graph_client_id or not (cfg.graph_refresh_token or token_blob):
+        raise EmailError("graph credentials missing", code="email_config")
+    refresh_token = token_blob or cfg.graph_refresh_token
 
     def persist(new_token: str) -> None:
         try:

@@ -13,7 +13,9 @@ from core.config import get_settings
 class SecretBox:
     def __init__(self, key_b64: str | None = None):
         raw = key_b64 if key_b64 is not None else get_settings().master_key
-        if not raw:
+        # A blank key is "not configured", not a passphrase: treating "   " as a key would
+        # encrypt/decrypt with a garbage key and turn a config mistake into a corrupt blob.
+        if not raw or not raw.strip():
             raise RuntimeError("YF_MASTER_KEY is not configured; refusing to store secrets in clear")
         try:
             self._key = base64.urlsafe_b64decode(raw)

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+
 import pytest
+
+from types import SimpleNamespace
 
 from pathlib import Path
 
@@ -9,6 +13,9 @@ from adapters.email import FakeMailbox, MailMessage, VERIFY_LINK_RE
 pytestmark = pytest.mark.asyncio
 
 LINK = "https://www.yelp.com/signup/verify?token=abc123&uid=42"
+
+KEY_A = base64.urlsafe_b64encode(b"A" * 32).decode()
+KEY_B = base64.urlsafe_b64encode(b"B" * 32).decode()
 
 
 def message(to: str = "alias@fviainboxes.com", body: str = f"Click {LINK}", folder: str = "inbox") -> MailMessage:
@@ -184,3 +191,163 @@ def test_token_path_ignores_the_current_working_directory(settings, tmp_path, mo
     expected = ROOT / "data" / "email_refresh_token.bin"
     assert _token_file(settings) == expected
     assert _token_file(settings).is_absolute()
+
+# ------------------------------------------- master key unusable vs blob unreadable (AN A/B)
+
+
+def _use_master_key(monkeypatch, value: str) -> None:
+    """Point ``SecretBox()`` at a given YF_MASTER_KEY value ("" = not configured)."""
+    monkeypatch.setattr("core.crypto.get_settings", lambda: SimpleNamespace(master_key=value))
+
+
+def _write_blob(path: Path, token: str, key: str = KEY_A) -> None:
+    from adapters.email import REFRESH_TOKEN_AAD
+    from core.crypto import SecretBox
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(SecretBox(key_b64=key).encrypt(token, aad=REFRESH_TOKEN_AAD))
+
+
+@pytest.mark.parametrize(
+    "bad_key",
+    ["", "   ", base64.urlsafe_b64encode(b"short-key").decode()],
+    ids=["missing", "blank", "wrong-length"],
+)
+def test_unusable_master_key_keeps_the_good_blob(settings, tmp_path, capsys, monkeypatch, bad_key):
+    """AN (A): a key/config mistake must never quarantine a healthy blob."""
+    from adapters.email import _load_refresh_token, build_provider
+
+    settings.email.provider = "ms_graph"
+    settings.email.graph_client_id = "client-id"
+    settings.email.graph_refresh_token = "cfg-token"
+    settings.artifacts_dir = str(tmp_path / "artifacts")
+
+    path = _token_path(tmp_path)
+    _write_blob(path, "live-token-v1")
+
+    _use_master_key(monkeypatch, bad_key)
+    provider = build_provider(settings)
+
+    assert provider.refresh_token == "cfg-token"
+    assert path.exists(), "the blob must stay in place while YF_MASTER_KEY is unusable"
+    assert not list(path.parent.glob("email_refresh_token.corrupt-*.bin"))
+    assert "refresh_token_key_missing" in capsys.readouterr().out
+
+    # The key comes back: the blob is still the live token, nothing was lost.
+    _use_master_key(monkeypatch, KEY_A)
+    assert _load_refresh_token(path) == "live-token-v1"
+
+
+@pytest.mark.parametrize(
+    "other_key", ["not-base64-at-all", KEY_B], ids=["malformed-passphrase", "rotated"]
+)
+def test_key_that_builds_but_cannot_decrypt_quarantines(settings, tmp_path, capsys, monkeypatch, other_key):
+    """Only "box built, decrypt failed" (rotated key / corrupt file) quarantines."""
+    from adapters.email import build_provider
+
+    settings.email.provider = "ms_graph"
+    settings.email.graph_client_id = "client-id"
+    settings.email.graph_refresh_token = "cfg-token"
+    settings.artifacts_dir = str(tmp_path / "artifacts")
+
+    path = _token_path(tmp_path)
+    _write_blob(path, "live-token-v1")
+
+    _use_master_key(monkeypatch, other_key)
+    provider = build_provider(settings)
+
+    assert provider.refresh_token == "cfg-token"
+    assert not path.exists(), "an undecryptable blob must be moved out of the way"
+    assert len(list(path.parent.glob("email_refresh_token.corrupt-*.bin"))) == 1
+    out = capsys.readouterr().out
+    assert "refresh_token_unreadable" in out
+    assert "refresh_token_key_missing" not in out
+
+
+def test_empty_config_token_uses_the_live_blob(settings, tmp_path, monkeypatch):
+    """AN (B) b1: during a rotation the configured token is empty and the blob is the live one."""
+    from adapters.email import build_provider
+
+    settings.email.provider = "ms_graph"
+    settings.email.graph_client_id = "client-id"
+    settings.email.graph_refresh_token = ""
+    settings.artifacts_dir = str(tmp_path / "artifacts")
+
+    path = _token_path(tmp_path)
+    _write_blob(path, "live-token-v1")
+    _use_master_key(monkeypatch, KEY_A)
+
+    provider = build_provider(settings)
+    assert provider.refresh_token == "live-token-v1"
+
+
+def test_no_config_token_and_no_blob_still_raises(settings, tmp_path, monkeypatch):
+    """AN (B) b2: nothing to authenticate with must still fail loudly."""
+    from adapters.base import EmailError
+    from adapters.email import build_provider
+
+    settings.email.provider = "ms_graph"
+    settings.email.graph_client_id = "client-id"
+    settings.email.graph_refresh_token = ""
+    settings.artifacts_dir = str(tmp_path / "artifacts")
+    _use_master_key(monkeypatch, KEY_A)
+
+    with pytest.raises(EmailError) as exc:
+        build_provider(settings)
+    assert exc.value.code == "email_config"
+
+
+def test_dead_config_token_is_not_used_silently_when_the_key_is_missing(settings, tmp_path, capsys, monkeypatch):
+    """AN (B) b5: the dangerous case - dead config token + live blob + no key in the env."""
+    from adapters.email import build_provider
+
+    settings.email.provider = "ms_graph"
+    settings.email.graph_client_id = "client-id"
+    settings.email.graph_refresh_token = "cfg-old-dead-token"
+    settings.artifacts_dir = str(tmp_path / "artifacts")
+
+    path = _token_path(tmp_path)
+    _write_blob(path, "live-token-v1")
+    _use_master_key(monkeypatch, "")
+
+    provider = build_provider(settings)
+
+    assert provider.refresh_token == "cfg-old-dead-token"
+    assert path.exists(), "the live blob must survive the rotation"
+    assert "refresh_token_key_missing" in capsys.readouterr().out
+
+
+def test_legacy_txt_survives_when_the_key_cannot_encrypt(tmp_path, capsys, monkeypatch):
+    """A key that cannot encrypt must not delete the only readable copy of the token."""
+    from adapters.email import _load_refresh_token
+
+    path = _token_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    legacy = path.with_suffix(".txt")
+    legacy.write_text("legacy-plain-secret", encoding="utf-8")
+    _use_master_key(monkeypatch, "")
+
+    assert _load_refresh_token(path) == ""
+    assert legacy.exists(), "the plaintext .txt must stay visible when it cannot be encrypted"
+    assert not path.exists()
+    out = capsys.readouterr().out
+    assert "refresh_token_legacy_key_missing" in out
+    assert "refresh_token_legacy_migration_failed" not in out
+
+
+def test_empty_blob_does_not_let_legacy_txt_overwrite_it(tmp_path, monkeypatch):
+    """``have_blob`` is the file, not the decrypted value (AN sub-point)."""
+    from adapters.email import REFRESH_TOKEN_AAD, _load_refresh_token
+    from core.crypto import SecretBox
+
+    path = _token_path(tmp_path)
+    _write_blob(path, "")
+    original = path.read_bytes()
+    legacy = path.with_suffix(".txt")
+    legacy.write_text("legacy-token", encoding="utf-8")
+    _use_master_key(monkeypatch, KEY_A)
+
+    assert _load_refresh_token(path) == ""
+    assert path.read_bytes() == original, "an empty token must not overwrite the existing blob"
+    assert not legacy.exists()
+    assert path.with_suffix(".legacy.bin").exists()
