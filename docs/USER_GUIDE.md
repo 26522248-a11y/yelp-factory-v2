@@ -87,7 +87,7 @@ Nếu chưa có icon, tạo lại shortcut trỏ tới `scripts\yf_launcher.ps1`
 ### 5.1 `.env` (secret, không commit)
 
 ```ini
-YF_DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5433/yelp_factory
+YF_DATABASE_URL=postgresql+psycopg://postgres:<PWD>@127.0.0.1:5433/yelp_factory   # <PWD> đã rotate 11/11 — lấy từ .env, KHÔNG commit
 YF_MASTER_KEY=<base64 16/24/32 byte>      # mã hoá password/token (bắt buộc base64, KHÔNG dùng passphrase thuần)
 YF_ADMIN_TOKEN=<token>                  # bearer cho admin API
 
@@ -103,6 +103,10 @@ YF_EMAIL__GRAPH_REFRESH_TOKEN=M.C524...
 YF_PROXY__DEFAULT_RAW=host:port:user:pass
 YF_SMS__API_KEY=hup_XXXX
 ```
+
+> Chạy test: lần đầu trên **mỗi máy** chạy `scripts\setup_test_db.ps1` (tạo DB test non-secret
+> `yelp_factory_test` + role `yf_test`, idempotent) — suite không bao giờ chạm DB thật `yelp_factory`.
+> Chi tiết: `docs/QA_DB_CHECKLIST.md` mục 0 + 0b.
 
 Sinh master key (dùng đúng helper của repo — bắt buộc base64 16/24/32 byte):
 
@@ -431,6 +435,7 @@ Login: sai mật khẩu **retry 1 lần** rồi mới dừng; gặp captcha/"ver
 ### Pool dữ liệu + Review phase (2026-11-09)
 
 Postgres local: `data/pg/pgsql` (binaries) + `data/pgdata` (data), cổng **5433**, user `postgres`, DB `yelp_factory`;
+password Postgres **đã rotate (11/11)** → lấy/ghi trong `.env`, không hardcode `postgres` (copy `postgres:postgres` sẽ fail auth);
 task `YelpFactoryPostgres` tự khởi động cùng máy.
 
 ```powershell

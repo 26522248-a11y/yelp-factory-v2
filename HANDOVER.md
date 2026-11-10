@@ -123,8 +123,14 @@ Gate review: **trust ≥75 + days_active ≥7 + photos_uploaded ≥8** + cùng m
 
 ## 8. Chạy & kiểm thử
 
+**Bước 0 — bắt buộc 1 lần/máy (idempotent), làm TRƯỚC khi chạy suite:**
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q     # 358 passed, 0 failed, 0 skipped (DB phải chạy)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup_test_db.ps1
+```
+→ tạo role `yf_test` + DB `yelp_factory_test` (non-secret, chỉ additive, **không** đụng `.env`/DB thật) rồi `db-init` schema cho DB test; `tests/conftest.py` `setdefault("YF_DATABASE_URL", …)` trỏ suite vào DB test → **suite không bao giờ chạm DB thật `yelp_factory`** (kể cả khi chạy trong `repo/` có `.env` thật). Chưa chạy → `db_ready` **fail** (không còn skip im lặng) → suite đỏ, không phải lỗi code.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -q     # 358 passed, 0 failed, 0 skipped (cần DB test ở bước 0)
 .\.venv\Scripts\yf.exe db-check                   # model ↔ DB, phải ok:true
 .\.venv\Scripts\yf.exe volume                     # multiplier (tuần lẻ 0.6)
 .\.venv\Scripts\yf.exe pool-audit
@@ -132,11 +138,13 @@ Gate review: **trust ≥75 + days_active ≥7 + photos_uploaded ≥8** + cùng m
 # Máy QA (không có .venv): dùng Python 3.12 hệ thống
 python -m cli db-init        # schema (DB trắng -> create_all + stamp head)
 python -m cli db-check       # model <-> DB
-python -m pytest tests -q    # full suite, DB thật -> không được skip
+python -m pytest tests -q    # full suite, DB test -> không được skip
 ```
 
+**DB thật ≠ DB suite:** `yelp_factory` = DB thật (`db-check`/`db-init`/backup/fingerprint đều trỏ vào đây); `yelp_factory_test` = DB suite (`tests/conftest.py` tự trỏ vào). `db-check` trên DB thật **không** đại diện cho schema DB test — muốn check DB test thì override `YF_DATABASE_URL` rồi `db-check` lại.
+
 **Điều kiện nghiệm thu (bắt buộc từ 11/11):**
-1. Full suite phải chạy được trên **cây không có `.env`** (token test do `tests/conftest.py` setdefault) — không được copy `.env` vào worktree để "làm xanh" suite: **358 passed / 0 failed / 0 skipped**, `tests/unit/test_api_pool.py` 5 passed, `tests/unit/test_email.py` 24 passed, `tests/unit/test_crypto.py` 8 passed, `E-93 + E-95` = 9 passed, không còn xfail.
+1. Full suite phải chạy được trên **cây không có `.env`** (token test do `tests/conftest.py` setdefault) — không được copy `.env` vào worktree để "làm xanh" suite, và phải có **0 skipped** (`skipped > 0` là pass giả — đã có 57 test DB bị skip im lặng 2 vòng): **358 passed / 0 failed / 0 skipped**, `tests/unit/test_api_pool.py` 5 passed, `tests/unit/test_email.py` 24 passed, `tests/unit/test_crypto.py` 8 passed, `E-93 + E-95` = 9 passed, không còn xfail.
 2. Schema phải khớp ở **cả 2** phép đo (mục 6b/6c của `docs/QA_DB_CHECKLIST.md`): `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schema_fingerprint.ps1 -DbName <db> -CompareTo yelp_factory` → **DIFF: 0** *và* `python -m cli db-check` → **ok:true, drift:null**. `DIFF: 0` một mình là **pass giả** (fingerprint không so `NOT NULL`/kiểu cột), và `db-check` không báo thay đổi predicate của partial index → luôn chạy cả hai.
 
 
@@ -188,6 +196,7 @@ Smoke tối thiểu:
      - **Legacy `.txt` không còn mất nguồn**: key không dùng được → log `refresh_token_legacy_key_missing` và **giữ nguyên** `.txt` plaintext trên đĩa; chỉ khi encrypt thành công mới xoá `.txt` (giá trị cũ giữ dạng `*.legacy.bin`).
      - **Blob `.bin` không phải "chỉ owner đọc được"**: `chmod` là no-op trên Windows; hiện dùng `icacls /inheritance:r /grant:r <user>:F` cho blob nhưng `repo\.env` vẫn `Authenticated Users:(M)` → hygiene, không phải blocker của rotate.
 2. **Tối ưu & cải thiện tool (ưu tiên mới — top 3 @MAI, chờ @MINH chốt roadmap):**
+   - **Số đo mới 11/11 (@AN `--durations=25`) làm 2 item dưới KHÔNG còn đúng giả thuyết**: "DB fixture session-scope" — top durations là fake-browser sleep 37/35/34/30/29s (`test_review_poster`/`test_post_review`), test DB chỉ 0.13–0.24s; "discover_base_url" — **0 caller** trong `src/`+tests (dead code, 95s/lần khi GPM tắt). Item metrics (4/8 chưa từng set) thì đúng. **Chờ @MINH chốt roadmap sáng mai** — danh sách dưới là bản đề xuất cũ, đọc số đo mới ở đây trước khi giao.
    - **S — DB fixture session-scope** (`tests/conftest.py:113` `db_ready` mở `session_scope()` mỗi test; `make_account` teardown xoá 9 bảng cho từng test) → 17 file dùng `db_ready`, mỗi vòng verify ~250s chủ yếu là chờ round-trip Postgres. **Đo trước** bằng `pytest -q --durations=15` (probe `data\durations_probe.bat` đã viết, chưa chạy) rồi mới sửa.
    - **S — metrics "xanh giả"**: `obs/metrics.py` khai `signup_duration_seconds`, `active_profiles`, `proxy_health_ratio`, `queue_depth`, `step_failures_total` nhưng `src/` chỉ `.inc()` cho `signup_total`/`step_failures_total`/`warming_actions_total`/`selector_miss_total` → `/metrics` (`api/admin.py:61`) trả **0 vĩnh viễn** cho thời lượng signup và số profile đang mở.
    - **M — `discover_base_url` quét 2000 cổng** (`adapters/gpm_http.py:299-327`: `SCAN_RANGE` 8000–10000 × `timeout=0.4`, 64 thread) → worst case ~12s mỗi lần GPM không trả lời, lại chạy đúng ở đường E-01 (GPM down) nên ca lỗi chậm gấp nhiều lần ca thành công; nên cache kết quả.

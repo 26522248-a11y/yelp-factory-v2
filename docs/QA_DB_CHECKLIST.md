@@ -1,34 +1,64 @@
-# Checklist QA: chay full suite + E-93/E-95 tren DB that (may QA)
+# Checklist QA: chay full suite + E-93/E-95 tren DB TEST (may QA)
+
+> Suite chay tren **DB TEST** `yelp_factory_test` (muc 0b) — KHONG phai DB that `yelp_factory`.
+> `db-check`/`backup`/`fingerprint` (muc 1, 5, 6) van tro DB that.
 
 ## 0. Moi truong (da dung san tren may QA)
 
 - Postgres 16.6 portable: binaries `data/pg/pgsql`, cluster `data/pgdata`, port **5433**
-- `.env` da co `YF_DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5433/yelp_factory`
+- `.env` (gitignored) co `YF_DATABASE_URL=postgresql+psycopg://postgres:<PWD>@127.0.0.1:5433/yelp_factory`
   va `YF_MASTER_KEY` random 32 byte
+  - **Password Postgres DA ROTATE (11/11)** -> `<PWD>` KHONG con la `postgres`.
+    `postgres:postgres` chi con hieu la default trong code cho may moi; LAY password tu `.env`, KHONG hardcode.
 - May QA khong co `.venv` -> dung `python` 3.12 he thong
 - May moi / dung lai tu dau:
   `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup_pg_portable.ps1`
+- Lay password Postgres tu `.env` (cho `psql`/`pg_dump`/`pg_restore` ben duoi; chay 1 lan moi shell):
+  ```powershell
+  $env:PGPASSWORD = [uri]::UnescapeDataString((Select-String -Path .env -Pattern '^YF_DATABASE_URL=[^:]*://[^:@]*:(.+)@').Matches[0].Groups[1].Value)
+  ```
+
+### 0b. BUOC BAT BUOC TRUOC KHI CHAY SUITE (1 lan / may, idempotent)
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup_test_db.ps1
+```
+
+- Doc superuser password tu `.env` (khong in ra man hinh), tao `CREATE ROLE yf_test LOGIN PASSWORD 'yf_test'`
+  + `CREATE DATABASE yelp_factory_test OWNER yf_test`, roi `db-init` schema cho DB test.
+- **Non-secret + chi additive**: khong sua `.env`, khong dung DB that `yelp_factory`.
+- `tests/conftest.py` `setdefault("YF_DATABASE_URL", ...)` -> suite tro toi `yelp_factory_test`,
+  nen suite **khong bao gio cham DB that** (ke ca khi chay trong `repo/` co `.env` that).
+- Chay lai script khi role/DB da ton tai la an toan (idempotent).
+- **Chua chay script nay** -> `db_ready` **FAIL** (khong con skip im lang) => suite do la LOI MOI TRUONG, khong phai loi code.
 
 ## 1. Kiem tra DB that (khong duoc skip)
+
+Muc nay kiem tra **DB THAT** (`yelp_factory`). Suite khong dung DB nay — suite dung **DB TEST**
+`yelp_factory_test` (muc 0b). `db-check`/`db-init` khi khong override `YF_DATABASE_URL` se tro DB that.
 
 ```powershell
 cd E:\Default Project\ai-team-workspace\repo
 python -m cli db-check
+$env:PGPASSWORD = [uri]::UnescapeDataString((Select-String -Path .env -Pattern '^YF_DATABASE_URL=[^:]*://[^:@]*:(.+)@').Matches[0].Groups[1].Value)
 data\pg\pgsql\bin\psql.exe -h 127.0.0.1 -p 5433 -U postgres -d yelp_factory -c "select version();"
 ```
 
 Ky vong: `db-check` -> `"ok": true`, `drift: null`; psql ra PostgreSQL 16.6.
 
-## 2. Full suite
+## 2. Full suite (chay tren DB TEST `yelp_factory_test`)
 
 ```powershell
 python -m pytest tests -q
 ```
 
+- **DIEU KIEN TRUOC KHI CHAY**: da chay `scripts\setup_test_db.ps1` tren may nay (muc 0b).
+  `db_ready` **fail** (khong skip) khi DB test chua co => suite do la LOI MOI TRUONG, khong phai loi code.
 - Bao cao dung so **thuc chay**: passed / failed / skipped + dong cuoi cua pytest.
-- `skipped > 0` => KHONG duoc coi la pass (skip = DB chua that).
+- `skipped > 0` => KHONG duoc coi la pass (skip = DB test chua san).
 - Fail thì chay lai file: `python -m pytest tests/<file> -q -x`.
-- Baseline vong nghiem thu trust (HEAD `daff69d`): **327 passed / 0 failed / 0 skipped**.
+- Baseline vong nghiem thu (HEAD `2a6b219`, cay khong co `.env`): **358 passed / 0 failed / 0 skipped**.
+  Con so o HEAD moi hon **CHUA** ghi vao baseline cho toi khi verify doc lap tren cay khong `.env` xanh.
 
 ## 3. E-93 (trust reachable)
 
@@ -67,7 +97,8 @@ uq_email_pool_mailbox_email_lower`) **neu DB da stamp**; nhung no KHONG phan anh
 index sai (cung ten, khac bieu thuc) -> van phai hoi thang Postgres:
 
 ```powershell
-set PGPASSWORD=postgres&& data\pg\pgsql\bin\psql.exe -h 127.0.0.1 -p 5433 -U postgres -d yelp_factory -c "select indexname, indexdef from pg_indexes where tablename='email_pool'"
+$env:PGPASSWORD = [uri]::UnescapeDataString((Select-String -Path .env -Pattern '^YF_DATABASE_URL=[^:]*://[^:@]*:(.+)@').Matches[0].Groups[1].Value)
+data\pg\pgsql\bin\psql.exe -h 127.0.0.1 -p 5433 -U postgres -d yelp_factory -c "select indexname, indexdef from pg_indexes where tablename='email_pool'"
 ```
 
 Ky vong thay `uq_email_pool_mailbox_email_lower` voi `UNIQUE ... (lower((mailbox_email)::text))`.
@@ -110,7 +141,7 @@ replaying the broken chain").
    `env_keys_<timestamp>.txt` chi chua **ten key**, khong co gia tri - `.env` phai luu rieng.
 2. Kiem tra dump phuc hoi duoc (khong tin "co file dump" la du):
    ```powershell
-   set PGPASSWORD=postgres
+   $env:PGPASSWORD = [uri]::UnescapeDataString((Select-String -Path .env -Pattern '^YF_DATABASE_URL=[^:]*://[^:@]*:(.+)@').Matches[0].Groups[1].Value)
    data\pg\pgsql\bin\createdb.exe -h 127.0.0.1 -p 5433 -U postgres yf_restore_probe
    data\pg\pgsql\bin\pg_restore.exe -h 127.0.0.1 -p 5433 -U postgres -d yf_restore_probe (Get-ChildItem C:\pgbackup\yelp_factory_*.dump | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    data\pg\pgsql\bin\psql.exe -h 127.0.0.1 -p 5433 -U postgres -d yf_restore_probe -tAc "select count(*) from information_schema.tables where table_schema='public'"
@@ -123,7 +154,8 @@ replaying the broken chain").
 5. Sau upgrade: `python -m cli db-check` -> `ok: true`, `drift: null`; `pg_indexes` -> co index lower-unique.
 6. Rollback (co canh bao):
    ```powershell
-   set PGPASSWORD=postgres&& data\pg\pgsql\bin\pg_dump.exe -h 127.0.0.1 -p 5433 -U postgres -d yelp_factory -t email_pool -f C:\pgbackup\email_pool_before_downgrade.sql
+   $env:PGPASSWORD = [uri]::UnescapeDataString((Select-String -Path .env -Pattern '^YF_DATABASE_URL=[^:]*://[^:@]*:(.+)@').Matches[0].Groups[1].Value)
+   data\pg\pgsql\bin\pg_dump.exe -h 127.0.0.1 -p 5433 -U postgres -d yelp_factory -t email_pool -f C:\pgbackup\email_pool_before_downgrade.sql
    python -m alembic downgrade 0011
    ```
    **Khi alembic da ve `0011` thi KHONG duoc chay traffic that**: index unique da bi drop,
@@ -193,6 +225,7 @@ Ghi chu 2 index moi: `ix_accounts_batch_id` + `ix_accounts_metro` da duoc them v
 
 ```
 Moi truong: <repo path>, PostgreSQL <version>, port 5433
+DB: suite=yelp_factory_test | that=yelp_factory | setup_test_db.ps1 da chay: <yes/no>
 Lenh: python -m pytest tests -q
 Ket qua: X passed, Y failed, Z skipped trong Ns
 E-93 + E-95: <pass/fail> (ky vong 9 passed)
