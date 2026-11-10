@@ -69,7 +69,12 @@ class MCPClient:
             payload["params"] = params
         result = self._post(payload)
         if "error" in result:
-            raise GPMError(str(result["error"].get("message") or result["error"]))
+            error = result["error"]
+            if isinstance(error, dict):
+                message = error.get("message") or error
+            else:
+                message = error
+            raise GPMError(str(message))
         return result.get("result")
 
     def initialize(self) -> dict[str, Any]:
@@ -162,13 +167,22 @@ class HybridGPM:
 
     def list_profiles(self) -> list[ProfileDTO]:
         data = self._call("list_profiles", {"page": 1, "per_page": 500}, self._http.list_profiles, {})
-        if isinstance(data, dict):
-            items = data.get("data") or data.get("profiles") or []
-        elif isinstance(data, list):
+        if isinstance(data, list):
             items = data
+        elif isinstance(data, dict):
+            items = data.get("data") or data.get("profiles") or []
         else:
-            items = []
-        return [self._http._to_profile(item) for item in items if isinstance(item, dict)]
+            raise GPMSchemaDrift("profiles payload is not a list", meta={"payload": data})
+        profiles: list[ProfileDTO] = []
+        for item in items:
+            if isinstance(item, ProfileDTO):
+                # The HTTP fallback already returns DTOs; keep them instead of re-parsing.
+                profiles.append(item)
+            elif isinstance(item, dict):
+                profiles.append(self._http._to_profile(item))
+            else:
+                raise GPMSchemaDrift("profile entry is not a mapping", meta={"entry": item})
+        return profiles
 
     def get_profile(self, profile_id: str) -> ProfileDTO:
         data = self._call("get_profile", {"id": profile_id}, self._http.get_profile, {"profile_id": profile_id})
