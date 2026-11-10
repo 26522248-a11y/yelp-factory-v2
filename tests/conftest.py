@@ -13,6 +13,14 @@ os.environ.setdefault("YF_MASTER_KEY", base64.urlsafe_b64encode(b"0" * 32).decod
 # and the pool API tests fail with 503. A throwaway token keeps the suite
 # self-contained (this throwaway token wins over .env in tests; nothing asserts the real value).
 os.environ.setdefault("YF_ADMIN_TOKEN", "test-admin-token")
+# The suite must never hit the real database: after the P0 rotation the default URL in
+# core/config.py is intentionally wrong. This NON-SECRET test DB (created by
+# scripts/setup_test_db.ps1) is used instead; setdefault means an explicit
+# YF_DATABASE_URL in the shell still wins, but .env (gitignored) never does.
+os.environ.setdefault(
+    "YF_DATABASE_URL",
+    "postgresql+psycopg://yf_test:yf_test@127.0.0.1:5433/yelp_factory_test",
+)
 
 from core.config import Settings, load_settings  # noqa: E402
 from human.timing import session_length_seconds  # noqa: E402
@@ -111,9 +119,13 @@ def pytest_configure(config):
 
 @pytest.fixture()
 def db_ready():
-    """Skip DB tests when Postgres is not reachable (default in CI without a DB)."""
-    import pytest as _pytest
+    """Fail loudly when the (non-secret) test Postgres is unreachable.
 
+    This fixture used to `pytest.skip` on *every* DB error, which silently turned 57 DB
+    tests green and hid a real "password authentication failed" for two acceptance
+    rounds. conftest always sets a DB URL (the non-secret test database), so an
+    unreachable DB is a broken environment, not an optional dependency.
+    """
     from sqlalchemy import text
 
     from db.session import session_scope
@@ -124,7 +136,12 @@ def db_ready():
             # Postgres is detected here instead of hanging a dependent fixture.
             session.execute(text("SELECT 1"))
     except Exception as exc:  # noqa: BLE001
-        _pytest.skip(f"postgres unavailable: {exc}")
+        pytest.fail(
+            f"test postgres unavailable: {exc}" + chr(10)
+            + "Run scripts\\setup_test_db.ps1 to (re)create the non-secret test database "
+            "(yelp_factory_test / role yf_test). The suite never uses the real DB.",
+            pytrace=False,
+        )
 
 
 @pytest.fixture()
