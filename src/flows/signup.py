@@ -41,9 +41,10 @@ from db.models import AccountState
 from flows.pools import Persona, build_persona, generate_password, pick_zip
 from human.mouse import human_click, read_pause
 from human.scroll import scroll_page
-from human.timing import idle, session_length_seconds
+from human.timing import idle, session_length_seconds, sleep_s
 from human.typing import human_type
 from obs.log import get_logger
+from obs.metrics import captcha_detected_total, signup_blocked_total
 
 log = get_logger("flows.signup")
 
@@ -131,13 +132,20 @@ class SignupFlow:
             pass
         await idle(page, 0.3, 0.9)
 
-    async def _detect_blocked(self, ctx: StageContext) -> bool:
+    async def _detect_blocked(self, ctx: StageContext, *, stage: str = "unknown") -> bool:
         page = self._page(ctx)
         try:
             content = (await page.content()).lower()
         except Exception:  # noqa: BLE001
             return False
-        return "access denied" in content or "you have been blocked" in content or "request blocked" in content
+        blocked = (
+            "access denied" in content
+            or "you have been blocked" in content
+            or "request blocked" in content
+        )
+        if blocked:
+            signup_blocked_total.labels(stage=stage).inc()
+        return blocked
 
     async def _inline_errors(self, ctx: StageContext) -> list[str]:
         page = self._page(ctx)
@@ -312,7 +320,7 @@ class SignupFlow:
                 break
             except GPMUnavailable as exc:
                 last_error = exc
-                await asyncio.sleep(3)
+                await sleep_s(3)
         if started is None:
             raise BrowserAttachError(f"profile start failed: {last_error}")
 
@@ -330,14 +338,16 @@ class SignupFlow:
                 raise BrowserAttachError(f"CDP attach failed twice: {exc} / {inner}") from inner
 
         ctx.data["browser"] = browser
-        page = browser.page
-        await page.set_viewport_size({"width": 1280, "height": 800})
+        # Do NOT call page.set_viewport_size() here: GPM already opened the window at
+        # 1280x800 (start_profile(window_size=...)), and forcing it after connect_over_cdp
+        # emits Emulation.setDeviceMetricsOverride -> screen/innerWidth/outerWidth disagree,
+        # which is exactly what anti-bot fingerprinting reads. Callers use ctx.data["browser"].page.
         return {"process_id": started.process_id, "cdp_url": started.cdp_url}
 
     async def _enter_prewarmed(self, ctx: StageContext) -> dict[str, Any]:
         page = self._page(ctx)
         await page.goto(HOME_URL, wait_until="domcontentloaded", timeout=45_000)
-        if await self._detect_blocked(ctx):
+        if await self._detect_blocked(ctx, stage="prewarmed"):
             raise YFError("IP blocked on first page", code="ip_blocked")
         await self._dismiss_overlays(ctx)
         await scroll_page(page, steps=random.randint(2, 4))
@@ -354,7 +364,7 @@ class SignupFlow:
             await page.goto(SIGNUP_URL, wait_until="domcontentloaded", timeout=45_000)
             await self._enforce_locale(ctx)
             await self._dismiss_overlays(ctx)
-            if await self._detect_blocked(ctx):
+            if await self._detect_blocked(ctx, stage="form_filled"):
                 raise YFError("IP blocked at signup", code="ip_blocked")
 
             await human_type(await self.registry.find(page, "signup.first_name"), persona.first_name)
@@ -420,6 +430,7 @@ class SignupFlow:
         challenge = await detect_captcha(page)
         if challenge is None:
             return {"captcha": "none"}
+        captcha_detected_total.labels(kind=challenge.kind).inc()
         if self.captcha is None:
             raise CaptchaError("captcha present but no solver chain configured")
         try:

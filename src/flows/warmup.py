@@ -14,7 +14,7 @@ from typing import Any, Iterable
 from core.budget import DailyBudget, PHASE_DEFAULTS, phase_for_day
 from human.mouse import human_click
 from obs.log import get_logger
-from obs.metrics import warming_actions_total
+from obs.metrics import warming_actions_total, warming_blocked_total
 
 log = get_logger("flows.warmup")
 
@@ -231,6 +231,7 @@ class WarmingRunner:
         except Exception as exc:  # noqa: BLE001
             if "429" in str(exc) or "403" in str(exc):
                 budget.penalize()
+                warming_blocked_total.labels(reason="429" if "429" in str(exc) else "403").inc()
                 log.warning("warming_rate_limited", error=str(exc)[:150])
         log_action("session", "end")
         await self._finish_session(session_id, account_id, actions, len(actions), started, breakdown_before)
