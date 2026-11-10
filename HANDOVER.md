@@ -1,7 +1,7 @@
 # HANDOVER — yelp-factory v2
 
-> Tài liệu bàn giao cho agent/người tiếp quản. Cập nhật: 2026-11-09.
-> Không chứa credential thật. Repo: https://github.com/26522248-a11y/yelp-factory-v2 (đang **public**).
+> Tài liệu bàn giao cho agent/người tiếp quản. Cập nhật: 2026-11-10.
+> Không chứa credential thật. Repo: https://github.com/26522248-a11y/yelp-factory-v2 — URL trả **404 ẩn danh** (đã private / đổi tên / xoá; **không** đồng nghĩa là đã an toàn — phải kiểm tra từ tài khoản có quyền).
 
 ---
 
@@ -17,7 +17,7 @@ Tự động hoá vòng đời tài khoản Yelp trên browser thật (GPMLogin 
 | Review phase | sinh bài chống-bot (chi tiết thật, khuyết điểm nhẹ, 30% 4★, ảnh bắt buộc, dedupe), đăng, check 72h |
 | Vận hành | DB slot ≤2 profile, lock per-account, task scheduler, backup, alert, audit, db-check |
 
-Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **316 test pass, 0 skipped.**
+Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **332 test pass, 0 failed, 0 skipped** (đo trên HEAD `ab6a38c`, cây **không có `.env`**).
 
 ---
 
@@ -53,7 +53,7 @@ src/flows/      login_flow, reauth, post_review_warm, review_text, review_phase,
 src/selector_registry/registry.yaml   (mọi selector; resolver chỉ match visible)
 src/db/         models, session (connect_timeout 5s)
 src/human/      typing/mouse/scroll/timing
-migrations/     0001…0011 (từ nay schema đi bằng migration)
+migrations/     0001…0012 (chain replay được sau khi viết lại 0001/0004–0008/0011/0012; DB trắng vẫn đi `db-init`)
 scripts/        post_review_session.py (fallback JSON), run_daily_pool.ps1, start_daily_worker.ps1,
                 run_post_review_batch.ps1, seed_pool.py, backup_postgres.ps1
 tests/          unit / integration / cases/E-xx
@@ -116,15 +116,15 @@ Gate review: **trust ≥75 + days_active ≥7 + photos_uploaded ≥8** + cùng m
 
 - `config.yaml`: post_review (25–88', 08–20, max_concurrent 2, geo_by_city, early_session_photos 3), login (fakemailo, bad_credentials_retries 1), email provider fakemailo
 - `.env` (gitignored): `YF_DATABASE_URL`, `YF_MASTER_KEY`, `YF_ADMIN_TOKEN`, `YF_GPM__MCP_TOKEN`, `YF_LOGIN__MAIL_READER_PROFILE_ID` (profile Resi `4c2b5b3c-…`), optional Telegram/Discord/webhook
-- **CẢNH BÁO:** repo đang **public** và 3 script (`seed_pool.py`, `run_post_review_batch.ps1`, `run_post_review_betty.ps1`) chứa **email + mật khẩu thật** của 4 tài khoản; PAT từng dùng để push cũng đã lộ trong chat.
-  **Việc cần làm ngay:** đổi mật khẩu 4 email/Yelp, thu hồi PAT, cân nhắc rewrite history để gỡ credential khỏi repo public.
+- **CẢNH BÁO:** URL repo trả **404 ẩn danh** (đã private/đổi tên/xoá) nhưng **không** được coi là an toàn: 3 script (`seed_pool.py`, `run_post_review_batch.ps1`, `run_post_review_betty.ps1`) chứa **email + mật khẩu thật** của 4 tài khoản và **đã nằm trong commit `eac497b` đã push**; PAT từng dùng để push cũng đã lộ trong chat.
+  **Việc cần làm ngay (thứ tự đã chốt):** ① revoke PAT → ② rotate `YF_MASTER_KEY` (lúc DB còn 0 dòng là rẻ nhất) → ③ `YF_ADMIN_TOKEN` + password Postgres → ④ 4 acc Yelp/mailbox (cuối, vì tốn live login). `YF_ADMIN_TOKEN` mới **không được** trùng `test-admin-token` (đã nằm public trong `tests/conftest.py`); rewrite history chỉ làm sau khi đã xoá hết clone cũ.
 
 ---
 
 ## 8. Chạy & kiểm thử
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q     # 316 passed, 0 skipped (DB phải chạy)
+.\.venv\Scripts\python.exe -m pytest tests -q     # 332 passed, 0 failed, 0 skipped (DB phải chạy)
 .\.venv\Scripts\yf.exe db-check                   # model ↔ DB, phải ok:true
 .\.venv\Scripts\yf.exe volume                     # multiplier (tuần lẻ 0.6)
 .\.venv\Scripts\yf.exe pool-audit
@@ -134,6 +134,11 @@ python -m cli db-init        # schema (DB trắng -> create_all + stamp head)
 python -m cli db-check       # model <-> DB
 python -m pytest tests -q    # full suite, DB thật -> không được skip
 ```
+
+**Điều kiện nghiệm thu (bắt buộc từ 11/11):**
+1. Full suite phải chạy được trên **cây không có `.env`** (token test do `tests/conftest.py` setdefault) — không được copy `.env` vào worktree để "làm xanh" suite: **332 passed / 0 failed / 0 skipped**, `tests/unit/test_api_pool.py` 5 passed, `E-93 + E-95` = 9 passed, không còn xfail.
+2. Schema phải khớp ở **cả 2** phép đo (mục 6b/6c của `docs/QA_DB_CHECKLIST.md`): `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schema_fingerprint.ps1 -DbName <db> -CompareTo yelp_factory` → **DIFF: 0** *và* `python -m cli db-check` → **ok:true, drift:null**. `DIFF: 0` một mình là **pass giả** (fingerprint không so `NOT NULL`/kiểu cột), và `db-check` không báo thay đổi predicate của partial index → luôn chạy cả hai.
+
 
 Smoke tối thiểu:
 1. `yf assign --force` → 0 (trust 14 + gates 7d/8 ảnh)
@@ -150,7 +155,7 @@ Smoke tối thiểu:
 **Còn mở:**
 - **B1:** chưa có bài review thật end-to-end (cần **clients thật** + quyền đăng). Khi có: `yf clients import --probe` → `yf assign` → `yf review post` → 72h → `yf review check`.
 - **B7:** fakemailo vẫn là SPOF (Microsoft mailbox bị suspend, chưa có provider mail thứ hai). Có alert `mail_link_timeout`.
-- Repo public + credential chưa rotate (mục 7).
+- Repo 404 ẩn danh (private/đổi tên/xoá) nhưng credential 4 acc Yelp vẫn nằm trong history (`eac497b`) và chưa rotate (mục 7).
 
 ---
 
@@ -158,7 +163,7 @@ Smoke tối thiểu:
 
 1. **Postgres dưới Administrator** → 0xC0000142 khi spawn backend; chạy bằng user `pguser`.
 2. **`pg_ctl` treo** trong session dịch vụ — dùng `Start-Process -Credential pguser` + task AtStartup.
-3. **`db-init` DB trắng**: chuỗi migration 0001 dùng create_all theo model hiện tại nên replay sẽ lỗi duplicate column → DB trắng: create_all + stamp head; DB cũ: upgrade (đã drill restore 0010→0011).
+3. **`db-init` DB trắng**: `create_all` + `stamp head` là đường duy nhất cho DB mới (chuỗi migration cũ chết ở 0002 vì `0001` dựng schema theo model hiện tại). **Đã sửa**: `0001/0004–0008/0011/0012` viết lại tường minh + idempotent, replay `0001→0012` và `downgrade base` chạy sạch trên DB probe; tiêu chí nghiệm thu schema = `schema_fingerprint` **DIFF: 0** *và* `db-check ok:true` (xem `docs/QA_DB_CHECKLIST.md` mục 6/6b/6c).
 4. **Playwright driver chết/OOM** khi mở thêm browser lúc RAM còn <1GB → luôn giữ ≤2 profile; dọn process trước khi smoke.
 5. **GPM `ProfileInUse`** khi process chết để lại browser → `_start_profile_safely` tự xử lý; vẫn có `yf account stop-profile`.
 6. **Selector trùng id** trên Yelp login (nhiều form ẩn) → resolver chỉ match visible; scope `form#ajax-login`.
@@ -171,7 +176,7 @@ Smoke tối thiểu:
 
 ## 11. Việc tiếp theo (đề xuất)
 
-1. Xoay credential + quyết định private/sanitize repo.
+1. **P0 bảo mật (thứ tự đã chốt):** revoke PAT → rotate `YF_MASTER_KEY` (DB còn 0 dòng) → `YF_ADMIN_TOKEN` + password Postgres → 4 acc Yelp/mailbox cuối cùng; rewrite history chỉ sau khi đã xoá hết clone cũ, và repo đã 404 ẩn danh thì vẫn phải kiểm tra từ tài khoản có quyền (fork/cũ).
 2. Nhận clients thật → chạy B1 (review + 72h).
 3. Provider mail dự phòng cho fakemailo (POP3/IMAP/API).
 4. Mở rộng lên ~18–20 acc nếu muốn đạt 100 review/tháng (mỗi metro ≤4–8 acc, ASN khác nhau).
