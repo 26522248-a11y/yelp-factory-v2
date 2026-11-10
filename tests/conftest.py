@@ -9,6 +9,10 @@ import uuid
 import pytest
 
 os.environ.setdefault("YF_MASTER_KEY", base64.urlsafe_b64encode(b"0" * 32).decode())
+# .env is gitignored, so a fresh clone / CI / detached worktree has no admin token
+# and the pool API tests fail with 503. A throwaway token keeps the suite
+# self-contained (this throwaway token wins over .env in tests; nothing asserts the real value).
+os.environ.setdefault("YF_ADMIN_TOKEN", "test-admin-token")
 
 from core.config import Settings, load_settings  # noqa: E402
 from human.timing import session_length_seconds  # noqa: E402

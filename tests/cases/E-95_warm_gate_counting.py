@@ -37,7 +37,13 @@ def _add_session(
     actions: int = 20,
     meta: dict | None = None,
 ) -> None:
-    started = datetime.now(timezone.utc) - timedelta(days=days_ago, hours=1)
+    now = datetime.now(timezone.utc)
+    started = now - timedelta(days=days_ago, hours=1)
+    if days_ago == 0:
+        # "today" must stay today even when the suite runs minutes after UTC midnight,
+        # otherwise now-1h is yesterday and sessions_today() legitimately returns 0.
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        started = min(max(started, midnight + timedelta(minutes=1)), now)
     with session_scope() as session:
         session.add(
             WarmingSession(
