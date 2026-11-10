@@ -88,7 +88,7 @@ Nếu chưa có icon, tạo lại shortcut trỏ tới `scripts\yf_launcher.ps1`
 
 ```ini
 YF_DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5433/yelp_factory
-YF_MASTER_KEY=<base64 32 byte>          # mã hoá password/token
+YF_MASTER_KEY=<base64 16/24/32 byte>      # mã hoá password/token (bắt buộc base64, KHÔNG dùng passphrase thuần)
 YF_ADMIN_TOKEN=<token>                  # bearer cho admin API
 
 YF_GPM__MCP_TOKEN=<token MCP GPM>
@@ -104,11 +104,26 @@ YF_PROXY__DEFAULT_RAW=host:port:user:pass
 YF_SMS__API_KEY=hup_XXXX
 ```
 
-Sinh master key:
+Sinh master key (dùng đúng helper của repo — bắt buộc base64 16/24/32 byte):
 
 ```powershell
-.\.venv\Scripts\python.exe -c "import base64;from cryptography.hazmat.primitives.ciphers.aead import AESGCM;print(base64.urlsafe_b64encode(AESGCM.generate_key(bit_length=256)).decode())"
+.\.venv\Scripts\python.exe -c "from core.crypto import generate_master_key; print(generate_master_key())"
 ```
+
+Từ `8aeea33` có lệnh CLI (in thẳng ra stdout, **không** đọc/ghi `.env`):
+
+```powershell
+.\.venv\Scripts\yf.exe key-gen                # 32 byte (mặc định)
+.\.venv\Scripts\yf.exe key-gen --bytes 16     # 16 / 24 / 32 byte
+```
+
+Máy không có `.venv` (đặt `PYTHONPATH=src` để import được package `core`):
+
+```powershell
+$env:PYTHONPATH="src"; python -c "from core.crypto import generate_master_key; print(generate_master_key())"
+```
+
+> Key phải là **base64** (chuẩn hoặc urlsafe) giải mã ra đúng **16/24/32 byte**. Chuỗi thuần kiểu passphrase **bị từ chối** (`ValueError`) — dùng sai làm hỏng mọi secret đã mã hoá, nên luôn sinh bằng `generate_master_key()`.
 
 ### 5.2 `config.yaml` (không chứa secret)
 
@@ -336,6 +351,7 @@ Log chi tiết: JSON trên console + `yf quarantine`; artifact lỗi trong `arti
 
 - Không commit `.env`, `data/`, `artifacts/`.
 - Password/token mã hoá AES-GCM (`YF_MASTER_KEY` ngoài DB).
+- `YF_MASTER_KEY` phải là base64 16/24/32 byte (sinh bằng `yf key-gen` hoặc `core.crypto.generate_master_key()`); passphrase thuần bị từ chối.
 - Admin API chỉ bind `127.0.0.1`.
 - Log đã redact password/OTP/proxy credential.
 - File import xoá khỏi temp sau khi xử lý.
@@ -481,6 +497,7 @@ yf proxy mark-healthy --account <id>          # COOLDOWN/proxy_dead -> READY
 yf volume --multiplier 0.5 | --pause | --resume
 yf clean-artifacts --days 30
 yf pool-audit | db-check
+yf key-gen | --bytes 16|24|32   # in YF_MASTER_KEY mới ra stdout (không đụng .env)
 ```
 
 ## 20. Hạn chế đã biết
@@ -488,5 +505,5 @@ yf pool-audit | db-check
 - **fakemailo là SPOF** khi mất session (mailbox Microsoft bị suspend, IMAP không khả dụng); có alert `mail_link_timeout` khi không nhận mail trong 60s nhưng chưa có provider thứ hai.
 - **Magic link lấy từ IP profile Resi, mở từ IP acc** — thực tế 08/11 chạy được nhưng có thể gây chết phiên ngẫu nhiên.
 - **Review end-to-end chưa chạy trên client thật** (chưa có danh sách client thật; file mẫu dùng biz-id giả).
-- **Migration chain 0001–0007 không replay được trên DB trắng** (0001 dùng create_all theo model hiện tại); DB trắng đi create_all+stamp, DB cũ đi upgrade — đã drill restore 0010→0011.
+- **Migration chain đã viết lại tường minh + idempotent** (`0001/0004–0008/0011/0012`): replay `0001→0012` và `downgrade base` chạy sạch trên DB probe; nghiệm thu schema = fingerprint **DIFF: 0** *và* `db-check ok:true`. DB trắng vẫn đi `db-init` (create_all + stamp head) — đã drill restore 0010→0011.
 - Máy 4GB RAM: trần thực tế 2 profile; không nâng `max_concurrent`.

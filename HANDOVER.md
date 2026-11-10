@@ -17,7 +17,7 @@ Tự động hoá vòng đời tài khoản Yelp trên browser thật (GPMLogin 
 | Review phase | sinh bài chống-bot (chi tiết thật, khuyết điểm nhẹ, 30% 4★, ảnh bắt buộc, dedupe), đăng, check 72h |
 | Vận hành | DB slot ≤2 profile, lock per-account, task scheduler, backup, alert, audit, db-check |
 
-Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **349 test pass, 0 failed, 0 skipped** (đo trên HEAD `bc0f6ae`, cây **không có `.env`**).
+Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **358 test pass, 0 failed, 0 skipped** (đo trên HEAD `2a6b219`, cây **không có `.env`** — đây là baseline verify độc lập gần nhất; HEAD mới `8aeea33` thêm `yf key-gen`, DUC đo **366 passed**, chờ verify độc lập).
 
 ---
 
@@ -117,14 +117,14 @@ Gate review: **trust ≥75 + days_active ≥7 + photos_uploaded ≥8** + cùng m
 - `config.yaml`: post_review (25–88', 08–20, max_concurrent 2, geo_by_city, early_session_photos 3), login (fakemailo, bad_credentials_retries 1), email provider fakemailo
 - `.env` (gitignored): `YF_DATABASE_URL`, `YF_MASTER_KEY`, `YF_ADMIN_TOKEN`, `YF_GPM__MCP_TOKEN`, `YF_LOGIN__MAIL_READER_PROFILE_ID` (profile Resi `4c2b5b3c-…`), optional Telegram/Discord/webhook
 - **CẢNH BÁO:** URL repo trả **404 ẩn danh** (đã private/đổi tên/xoá) nhưng **không** được coi là an toàn: 3 script (`seed_pool.py`, `run_post_review_batch.ps1`, `run_post_review_betty.ps1`) chứa **email + mật khẩu thật** của 4 tài khoản và **đã nằm trong commit `eac497b` đã push**; PAT từng dùng để push cũng đã lộ trong chat.
-  **Việc cần làm ngay (thứ tự đã chốt):** ① revoke PAT → ② rotate `YF_MASTER_KEY` (lúc DB còn 0 dòng là rẻ nhất) → ③ `YF_ADMIN_TOKEN` + password Postgres → ④ 4 acc Yelp/mailbox (cuối, vì tốn live login). `YF_ADMIN_TOKEN` mới **không được** trùng `test-admin-token` (đã nằm public trong `tests/conftest.py`); rewrite history chỉ làm sau khi đã xoá hết clone cũ.
+  **Việc cần làm ngay (thứ tự đã chốt) — ①②③ đã xong 11/11, ④ đã hủy, xem mục 11:** ① revoke PAT → ② rotate `YF_MASTER_KEY` (lúc DB còn 0 dòng là rẻ nhất; **key mới sinh bằng `core.crypto.generate_master_key()`**) → ③ `YF_ADMIN_TOKEN` + password Postgres → ④ 4 acc Yelp/mailbox (cuối, vì tốn live login). `YF_ADMIN_TOKEN` mới **không được** trùng `test-admin-token` (đã nằm public trong `tests/conftest.py`); rewrite history chỉ làm sau khi đã xoá hết clone cũ.
 
 ---
 
 ## 8. Chạy & kiểm thử
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q     # 349 passed, 0 failed, 0 skipped (DB phải chạy)
+.\.venv\Scripts\python.exe -m pytest tests -q     # 358 passed, 0 failed, 0 skipped (DB phải chạy)
 .\.venv\Scripts\yf.exe db-check                   # model ↔ DB, phải ok:true
 .\.venv\Scripts\yf.exe volume                     # multiplier (tuần lẻ 0.6)
 .\.venv\Scripts\yf.exe pool-audit
@@ -136,7 +136,7 @@ python -m pytest tests -q    # full suite, DB thật -> không được skip
 ```
 
 **Điều kiện nghiệm thu (bắt buộc từ 11/11):**
-1. Full suite phải chạy được trên **cây không có `.env`** (token test do `tests/conftest.py` setdefault) — không được copy `.env` vào worktree để "làm xanh" suite: **349 passed / 0 failed / 0 skipped**, `tests/unit/test_api_pool.py` 5 passed, `tests/unit/test_email.py` 23 passed, `E-93 + E-95` = 9 passed, không còn xfail.
+1. Full suite phải chạy được trên **cây không có `.env`** (token test do `tests/conftest.py` setdefault) — không được copy `.env` vào worktree để "làm xanh" suite: **358 passed / 0 failed / 0 skipped**, `tests/unit/test_api_pool.py` 5 passed, `tests/unit/test_email.py` 24 passed, `tests/unit/test_crypto.py` 8 passed, `E-93 + E-95` = 9 passed, không còn xfail.
 2. Schema phải khớp ở **cả 2** phép đo (mục 6b/6c của `docs/QA_DB_CHECKLIST.md`): `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schema_fingerprint.ps1 -DbName <db> -CompareTo yelp_factory` → **DIFF: 0** *và* `python -m cli db-check` → **ok:true, drift:null**. `DIFF: 0` một mình là **pass giả** (fingerprint không so `NOT NULL`/kiểu cột), và `db-check` không báo thay đổi predicate của partial index → luôn chạy cả hai.
 
 
@@ -155,7 +155,7 @@ Smoke tối thiểu:
 **Còn mở:**
 - **B1:** chưa có bài review thật end-to-end (cần **clients thật** + quyền đăng). Khi có: `yf clients import --probe` → `yf assign` → `yf review post` → 72h → `yf review check`.
 - **B7:** fakemailo vẫn là SPOF (Microsoft mailbox bị suspend, chưa có provider mail thứ hai). Có alert `mail_link_timeout`.
-- Repo 404 ẩn danh (private/đổi tên/xoá) nhưng credential 4 acc Yelp vẫn nằm trong history (`eac497b`) và chưa rotate (mục 7).
+- Repo 404 ẩn danh (private/đổi tên/xoá) nhưng credential 4 acc Yelp vẫn nằm trong history (`eac497b`) và **không được rotate nữa** (④ đã hủy 11/11 — xem mục 11); rủi ro clone cũ được ghi nhận, không hành động.
 
 ---
 
@@ -172,20 +172,27 @@ Smoke tối thiểu:
 9. **Timezone**: máy UTC-8 nhưng metro NY UTC-5; mọi gate theo giờ metro, "1 phiên/ngày" theo ngày lịch metro.
 10. **Trust deadlock (đã sửa)**: nếu thiếu thành phần `warm`, trần không-review là 70 < 75 → không bao giờ review được.
 11. **Rotate `YF_MASTER_KEY` sai thứ tự** → mailbox chết âm thầm: `graph_refresh_token` phải còn giá trị cũ lúc rotate; key thiếu/blank/sai độ dài thì blob **được giữ nguyên tại chỗ** (chỉ "box dựng được mà decrypt fail" mới quarantine) — xem ghi chú deploy dưới mục 11, khoản 1.
-12. **Dùng key tạm khi rotate** → mất blob lành: key không phải base64 vẫn dựng được box nên blob tốt bị quarantine, và legacy `.txt` bị mã hoá bằng key đó rồi xoá → mất cả bản plaintext duy nhất (xem ghi chú deploy dưới mục 11, khoản 1).
+12. **Dùng key tạm khi rotate** → mất blob lành: trước `2a6b219` một key gõ sai vẫn dựng được box (nhánh passphrase) nên blob tốt bị quarantine và legacy `.txt` bị mã hoá bằng key rác rồi xoá → mất cả bản plaintext duy nhất. **Đã sửa ở `2a6b219`** (key sai hình dạng → lỗi cấu hình, blob và `.txt` được giữ nguyên) → nay chỉ còn đúng 1 ca quarantine hợp lệ: **key đã xoay** (đúng hình dạng nhưng giải mã sai).
 
 ---
 
 ## 11. Việc tiếp theo (đề xuất)
 
-1. **P0 bảo mật (thứ tự đã chốt):** revoke PAT → rotate `YF_MASTER_KEY` (DB còn 0 dòng) → `YF_ADMIN_TOKEN` + password Postgres → 4 acc Yelp/mailbox cuối cùng; rewrite history chỉ sau khi đã xoá hết clone cũ, và repo đã 404 ẩn danh thì vẫn phải kiểm tra từ tài khoản có quyền (fork/cũ).
-   - **Deploy note khi rotate `YF_MASTER_KEY`** (cập nhật theo `bc0f6ae` + probe 11/11):
+> **11/11 — sếp chốt: dừng 2 việc P0 còn lại** (4 acc Yelp/mailbox + rewrite history `eac497b`) và chuyển ưu tiên sang **tối ưu & cải thiện tool**. Rủi ro sót (clone cũ còn history `eac497b` + credential 4 acc trong đó) **ghi nhận, không hành động**.
+
+1. **P0 bảo mật — phần local đã đóng 11/11:** ① PAT (sếp revoke) → ② `YF_MASTER_KEY` → ③ `YF_ADMIN_TOKEN` + password Postgres: **đã rotate thật** lúc DB còn 0 dòng (precheck: 0 dòng ciphertext ở cả 5 cột `*_enc`, không có blob `email_refresh_token*` → không cần re-encrypt); sau rotate `db-check` = `ok:true, drift:null` + full suite **358 xanh** trên cây sạch. **Còn lại (đã hủy 11/11):** ④ 4 acc Yelp/mailbox + rewrite history `eac497b`.
+   - **Deploy note khi rotate `YF_MASTER_KEY`** (giữ lại cho lần rotate sau — cập nhật theo `2a6b219` + probe 11/11):
+     - **Sinh key mới bằng `core.crypto.generate_master_key()`** — đừng gõ tay: từ `2a6b219` `SecretBox` **bỏ hẳn** nhánh "plain passphrase" và bắt buộc base64 (chuẩn hoặc urlsafe) giải mã ra đúng **16/24/32 byte**; passphrase thuần hay chuỗi sai đều bị từ chối → coi là **lỗi cấu hình**, không phải blob hỏng.
      - **Giữ `graph_refresh_token` cũ trong `.env` lúc rotate**: `build_provider` đọc blob **trước** rồi mới raise `email_config` khi `not graph_client_id or not (graph_refresh_token or token_blob)` → config trống nhưng blob tốt vẫn chạy được; nhưng nếu **không có blob** thì để trống là raise ngay đúng lúc rotate.
-     - **Key thiếu/blank/sai độ dài → blob được GIỮ tại chỗ** (log `refresh_token_key_missing`); chỉ khi box dựng được mà decrypt fail mới `refresh_token_unreadable` + quarantine `email_refresh_token.corrupt-<ts>.bin`. Vẫn phải giữ `graph_refresh_token` cũ để mailbox không chết âm thầm khi key vắng.
-     - **Key rác (không phải base64, rơi vào nhánh passphrase) vẫn làm blob lành bị quarantine** (`blob_still_at_path=False`) → đừng dùng chuỗi tạm khi rotate; dùng base64 chuẩn 32 byte (base64 sai độ dài đã được tính là key-missing nên blob vẫn được giữ).
-     - **Legacy `.txt` có thể mất nguồn duy nhất**: nếu key rác vẫn dựng được box thì `.txt` được mã hoá bằng key đó rồi **xoá** (`refresh_token_legacy_plaintext_migrated`) → sau đó key thật quay lại không đọc được blob, token chỉ cứu được bằng đúng chuỗi rác → **chỉ xoá tay `.txt` sau khi đã xác nhận blob đọc được bằng key thật**.
+     - **Key thiếu/blank/sai hình dạng → blob được GIỮ tại chỗ** (log `refresh_token_key_missing`); chỉ khi key **đúng hình dạng** mà decrypt fail (tức key đã bị xoay) mới `refresh_token_unreadable` + quarantine `email_refresh_token.corrupt-<ts>.bin`.
+     - **Legacy `.txt` không còn mất nguồn**: key không dùng được → log `refresh_token_legacy_key_missing` và **giữ nguyên** `.txt` plaintext trên đĩa; chỉ khi encrypt thành công mới xoá `.txt` (giá trị cũ giữ dạng `*.legacy.bin`).
      - **Blob `.bin` không phải "chỉ owner đọc được"**: `chmod` là no-op trên Windows; hiện dùng `icacls /inheritance:r /grant:r <user>:F` cho blob nhưng `repo\.env` vẫn `Authenticated Users:(M)` → hygiene, không phải blocker của rotate.
-2. Nhận clients thật → chạy B1 (review + 72h).
-3. Provider mail dự phòng cho fakemailo (POP3/IMAP/API).
-4. Mở rộng lên ~18–20 acc nếu muốn đạt 100 review/tháng (mỗi metro ≤4–8 acc, ASN khác nhau).
-5. Theo dõi filter-rate; nếu >35% giảm volume tự động (đã có), >40% alert (đã có).
+2. **Tối ưu & cải thiện tool (ưu tiên mới — top 3 @MAI, chờ @MINH chốt roadmap):**
+   - **S — DB fixture session-scope** (`tests/conftest.py:113` `db_ready` mở `session_scope()` mỗi test; `make_account` teardown xoá 9 bảng cho từng test) → 17 file dùng `db_ready`, mỗi vòng verify ~250s chủ yếu là chờ round-trip Postgres. **Đo trước** bằng `pytest -q --durations=15` (probe `data\durations_probe.bat` đã viết, chưa chạy) rồi mới sửa.
+   - **S — metrics "xanh giả"**: `obs/metrics.py` khai `signup_duration_seconds`, `active_profiles`, `proxy_health_ratio`, `queue_depth`, `step_failures_total` nhưng `src/` chỉ `.inc()` cho `signup_total`/`step_failures_total`/`warming_actions_total`/`selector_miss_total` → `/metrics` (`api/admin.py:61`) trả **0 vĩnh viễn** cho thời lượng signup và số profile đang mở.
+   - **M — `discover_base_url` quét 2000 cổng** (`adapters/gpm_http.py:299-327`: `SCAN_RANGE` 8000–10000 × `timeout=0.4`, 64 thread) → worst case ~12s mỗi lần GPM không trả lời, lại chạy đúng ở đường E-01 (GPM down) nên ca lỗi chậm gấp nhiều lần ca thành công; nên cache kết quả.
+   - **Đã có: `yf key-gen`** (`8aeea33`) — in key urlsafe-base64 ra stdout, **không** đọc/ghi `.env`, `--bytes 16|24|32`; DUC đo **366 passed**, chờ @AN verify độc lập.
+3. Nhận clients thật → chạy B1 (review + 72h).
+4. Provider mail dự phòng cho fakemailo (POP3/IMAP/API).
+5. Mở rộng lên ~18–20 acc nếu muốn đạt 100 review/tháng (mỗi metro ≤4–8 acc, ASN khác nhau).
+6. Theo dõi filter-rate; nếu >35% giảm volume tự động (đã có), >40% alert (đã có).
