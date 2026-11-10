@@ -17,6 +17,7 @@ from core.state_machine import StageContext, StateMachine
 from db.models import Account, AccountState, Profile, Quarantine, Run, RunState
 from db.session import session_scope
 from flows.pools import build_persona
+from core.fingerprint_matrix import window_size_for_profile
 from flows.signup import SignupFlow
 from obs.log import bind_context, get_logger
 from obs.metrics import signup_duration_seconds, signup_total
@@ -929,7 +930,7 @@ async def run_post_review_warm(account_id: uuid.UUID, deps: SignupDeps, *, max_s
         release_slot(slot)
 
 
-def _start_profile_safely(deps: SignupDeps, profile_id: str, *, window_size: str = "1280,800"):
+def _start_profile_safely(deps: SignupDeps, profile_id: str, *, window_size: str | None = None):
     """Start a GPM profile, recovering from a leftover browser (ProfileInUse, B5).
 
     A crashed worker can leave the profile open after its slot TTL expires; on the next
@@ -938,8 +939,9 @@ def _start_profile_safely(deps: SignupDeps, profile_id: str, *, window_size: str
     """
     import time as _time
 
+    effective_window_size = window_size if window_size else window_size_for_profile(profile_id)
     try:
-        return deps.gpm.start_profile(profile_id, window_size=window_size, skip_proxy_check=True)
+        return deps.gpm.start_profile(profile_id, window_size=effective_window_size, skip_proxy_check=True)
     except Exception as exc:  # noqa: BLE001
         if "ProfileInUse" not in str(exc):
             raise
@@ -949,7 +951,7 @@ def _start_profile_safely(deps: SignupDeps, profile_id: str, *, window_size: str
         except Exception:  # noqa: BLE001
             pass
         _time.sleep(2)
-        return deps.gpm.start_profile(profile_id, window_size=window_size, skip_proxy_check=True)
+        return deps.gpm.start_profile(profile_id, window_size=effective_window_size, skip_proxy_check=True)
 
 
 def _note_proxy_failure(account_id, *, severity_threshold: int = 2) -> int:

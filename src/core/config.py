@@ -169,6 +169,7 @@ class Settings(BaseSettings):
     artifacts_dir: str = "artifacts"
     log_level: str = "INFO"
     human_time_scale: float = 1.0  # 0.0 collapses sleeps in tests; 1.0 keeps production cadence
+    fingerprint_salt: str = "yf-fingerprint-v1"
 
     @field_validator("human_time_scale", mode="before")
     @classmethod

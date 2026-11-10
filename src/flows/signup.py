@@ -33,6 +33,7 @@ from adapters.base import (
 from adapters.browser import attach
 from adapters.captcha import CaptchaChain, detect as detect_captcha
 from adapters.gpm_ops import ensure_profile, profile_name
+from core.fingerprint_matrix import for_account as fingerprint_for_account
 from adapters.proxy_probe import ProxyTarget, probe
 from core.backoff import RetryPolicy
 from core.checkpoints import persist_account_state
@@ -227,11 +228,22 @@ class SignupFlow:
         from human.timing import CITY_TIMEZONES
 
         city_tz = CITY_TIMEZONES.get(persona.city, "America/New_York")
+        versions_by_engine: dict[str, list[str]] = {}
+        try:
+            versions_by_engine = self.gpm.browser_versions()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("browser_versions_failed", error=str(exc)[:120])
+        fp = fingerprint_for_account(
+            ctx.account_id,
+            salt=settings.fingerprint_salt,
+            versions_by_engine=versions_by_engine,
+        )
+        resolved_browser_version = fp.browser_version or settings.gpm.browser_version
         create_kwargs = dict(
             raw_proxy=raw_proxy,
-            browser_version=settings.gpm.browser_version,
-            os_type=settings.gpm.os_type,
-            browser_type=settings.gpm.browser_type,
+            browser_version=resolved_browser_version,
+            os_type=fp.os_type,
+            browser_type=fp.browser_type,
             canvas_mode=1,
             webgl_image_mode=1,
             webgl_metadata_mode=1,
@@ -248,7 +260,7 @@ class SignupFlow:
         try:
             profile, reused = ensure_profile(
                 self.gpm,
-                operation_id=f"reg:{ctx.account_id}",
+                operation_id=f"reg:{ctx.account_id}:fp1",
                 name=profile_name(str(ctx.account_id)),
                 create_kwargs=create_kwargs,
             )
@@ -259,12 +271,13 @@ class SignupFlow:
         ctx.data["profile"] = profile
         ctx.data["profile_reused"] = reused
         ctx.data["fingerprint_applied"] = True
-        self._persist_profile(ctx, profile, raw_proxy)
+        ctx.data["fingerprint"] = fp
+        self._persist_profile(ctx, profile, raw_proxy, fp, resolved_browser_version)
         persist_account_state(ctx.account_id, AccountState.PROVISIONING)
         return {"profile_id": profile.id}
 
     @staticmethod
-    def _persist_profile(ctx: StageContext, profile: ProfileDTO, raw_proxy: str) -> None:
+    def _persist_profile(ctx: StageContext, profile: ProfileDTO, raw_proxy: str, fp, resolved_browser_version: str) -> None:
         """Keep the profiles table in sync so the reaper can find orphans (E-25)."""
         from db.models import Profile
         from db.session import session_scope
@@ -277,7 +290,14 @@ class SignupFlow:
                         gpm_profile_id=profile.id,
                         name=profile.name,
                         status="active",
-                        fingerprint_json={"browser": profile.browser_version, "proxy_set": bool(raw_proxy)},
+                        fingerprint_json={
+                            "browser": profile.browser_version,
+                            "proxy_set": bool(raw_proxy),
+                            "os_type": fp.os_type,
+                            "browser_type": fp.browser_type,
+                            "browser_version": resolved_browser_version,
+                            "window_size": fp.window_size,
+                        },
                     )
                     session.add(row)
                     session.flush()
@@ -314,9 +334,15 @@ class SignupFlow:
         profile: ProfileDTO = ctx.data["profile"]
         started = None
         last_error: Exception | None = None
+        fp = ctx.data.get("fingerprint")
+        window_size = fp.window_size if fp else None
         for attempt in range(2):
             try:
-                started = self.gpm.start_profile(profile.id, window_size="1280,800", skip_proxy_check=True)
+                started = self.gpm.start_profile(
+                    profile.id,
+                    window_size=window_size if window_size else "1280,800",
+                    skip_proxy_check=True,
+                )
                 break
             except GPMUnavailable as exc:
                 last_error = exc
@@ -331,7 +357,7 @@ class SignupFlow:
             # E-02: stop and start once more on a fresh port.
             try:
                 self.gpm.stop_profile(profile.id)
-                restarted = self.gpm.start_profile(profile.id, remote_debugging_port=random.randint(40000, 60000))
+                restarted = self.gpm.start_profile(profile.id, remote_debugging_port=random.randint(40000, 60000), window_size=window_size if window_size else "1280,800")
                 browser = await attach(restarted.cdp_url, timeout_s=self.settings.gpm.connect_timeout_s)
                 ctx.data["start_result"] = restarted
             except Exception as inner:  # noqa: BLE001

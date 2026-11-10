@@ -235,12 +235,15 @@ class FakeGPM:
         self.profiles.append(profile)
         return profile
 
+    def browser_versions(self):
+        return {}
+
     def start_profile(self, profile_id: str, **kwargs):
         if self.fail_start:
             from adapters.base import GPMUnavailable
 
             raise GPMUnavailable("start failed")
-        result = StartResult(profile_id=profile_id, remote_debugging_port=45000, process_id=1234, raw={})
+        result = StartResult(profile_id=profile_id, remote_debugging_port=45000, process_id=1234, raw={"window_size": kwargs.get("window_size", "1280,800")})
         self.started.append(result)
         return result
 

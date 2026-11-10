@@ -10,6 +10,7 @@ import uuid
 from pathlib import Path
 
 from core.config import get_settings
+from core.fingerprint_matrix import window_size_for_profile
 from obs.log import configure_logging, get_logger
 
 log = get_logger("cli")
@@ -1053,7 +1054,7 @@ async def probe_profile_report(profile_id: str, collect_signals: bool = True) ->
 
     settings = get_settings()
     client = _deps(settings).gpm
-    started = client.start_profile(profile_id, window_size="1280,800")
+    started = client.start_profile(profile_id, window_size=window_size_for_profile(profile_id))
     browser = await attach(started.cdp_url, timeout_s=settings.gpm.connect_timeout_s)
     page = browser.page
     title = None
