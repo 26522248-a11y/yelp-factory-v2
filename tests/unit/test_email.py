@@ -210,8 +210,8 @@ def _write_blob(path: Path, token: str, key: str = KEY_A) -> None:
 
 @pytest.mark.parametrize(
     "bad_key",
-    ["", "   ", base64.urlsafe_b64encode(b"short-key").decode()],
-    ids=["missing", "blank", "wrong-length"],
+    ["", "   ", base64.urlsafe_b64encode(b"short-key").decode(), "###not-base64###"],
+    ids=["missing", "blank", "wrong-length", "malformed"],
 )
 def test_unusable_master_key_keeps_the_good_blob(settings, tmp_path, capsys, monkeypatch, bad_key):
     """AN (A): a key/config mistake must never quarantine a healthy blob."""
@@ -238,9 +238,7 @@ def test_unusable_master_key_keeps_the_good_blob(settings, tmp_path, capsys, mon
     assert _load_refresh_token(path) == "live-token-v1"
 
 
-@pytest.mark.parametrize(
-    "other_key", ["not-base64-at-all", KEY_B], ids=["malformed-passphrase", "rotated"]
-)
+@pytest.mark.parametrize("other_key", [KEY_B], ids=["rotated"])
 def test_key_that_builds_but_cannot_decrypt_quarantines(settings, tmp_path, capsys, monkeypatch, other_key):
     """Only "box built, decrypt failed" (rotated key / corrupt file) quarantines."""
     from adapters.email import build_provider
@@ -317,15 +315,20 @@ def test_dead_config_token_is_not_used_silently_when_the_key_is_missing(settings
     assert "refresh_token_key_missing" in capsys.readouterr().out
 
 
-def test_legacy_txt_survives_when_the_key_cannot_encrypt(tmp_path, capsys, monkeypatch):
-    """A key that cannot encrypt must not delete the only readable copy of the token."""
+@pytest.mark.parametrize("bad_key", ["", "###not-base64###"], ids=["missing", "malformed"])
+def test_legacy_txt_survives_when_the_key_cannot_encrypt(tmp_path, capsys, monkeypatch, bad_key):
+    """A key that cannot encrypt must not delete the only readable copy of the token.
+
+    A malformed key must land here too: the removed passphrase fallback used to encrypt the
+    legacy token with a junk key and then delete the plaintext (AN probe 11/11).
+    """
     from adapters.email import _load_refresh_token
 
     path = _token_path(tmp_path)
     path.parent.mkdir(parents=True)
     legacy = path.with_suffix(".txt")
     legacy.write_text("legacy-plain-secret", encoding="utf-8")
-    _use_master_key(monkeypatch, "")
+    _use_master_key(monkeypatch, bad_key)
 
     assert _load_refresh_token(path) == ""
     assert legacy.exists(), "the plaintext .txt must stay visible when it cannot be encrypted"
