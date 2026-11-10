@@ -17,7 +17,7 @@ Tự động hoá vòng đời tài khoản Yelp trên browser thật (GPMLogin 
 | Review phase | sinh bài chống-bot (chi tiết thật, khuyết điểm nhẹ, 30% 4★, ảnh bắt buộc, dedupe), đăng, check 72h |
 | Vận hành | DB slot ≤2 profile, lock per-account, task scheduler, backup, alert, audit, db-check |
 
-Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **358 test pass, 0 failed, 0 skipped** (đo trên HEAD `2a6b219`, cây **không có `.env`** — đây là baseline verify độc lập gần nhất; HEAD mới `8aeea33` thêm `yf key-gen`, DUC đo **366 passed**, chờ verify độc lập).
+Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **412 test pass, 0 failed, 0 skipped** (verify độc lập của @AN tại HEAD `4a8e267`, worktree **không có `.env`**: 9.54s; trước đó tại `4211f82` → **405/0/0 trong 22.17s**, chạy lại với `YF_HUMAN_TIME_SCALE=1.0` → **405/0/0 trong 261.12s** → nhịp production không đổi). **Số nghiệm thu hiện hành là 412**; HEAD `3dc26f8` chỉ sửa `scripts/setup_test_db.ps1` nên không đổi số test; ma trận fingerprint v2 đang dở trong working-tree → số sẽ nhảy tiếp, chờ re-peg.
 
 ---
 
@@ -31,6 +31,7 @@ Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **358 test pass,
 | Postgres 16 (portable) | binaries `data/pg/pgsql`, data dir `data/pgdata`, **port 5433**, user `postgres`, password **đọc từ `.env`** (đã rotate 11/11 — `postgres:postgres` **không còn đúng**), DB `yelp_factory` |
 | Backup | `C:\pgbackup` (**máy cũ**: dump 03:00 hằng ngày, giữ 14; **không** chứa bản `.env` — chỉ ghi tên key). **Máy QA 11/11: chạy TAY** bằng `scripts\backup_postgres.ps1` — chưa có scheduled task (mục 6) |
 | Máy QA (11/11) | repo `E:\Default Project\ai-team-workspace\repo`, Python 3.12 hệ thống (không có `.venv`), Postgres portable đã dựng tại `data/pg/pgsql` + `data/pgdata` |
+| GPM (máy QA 11/11) | **KHÔNG có GPMLogin trên máy QA** — cổng `9495`/`19995` đóng (`Test-NetConnection` = False), không có `GPMLogin` ở 3 vị trí `DEFAULT_DATA_DIRS`; `python -m cli probe-profile --profile-id <id>` → `GPMUnavailable: ConnectError [WinError 10061]`; máy QA cũng **không có `playwright`** → mọi kiểm chứng anti-detect / fingerprint phải chạy trên **máy vận hành có GPM** (AN verify 11/11) |
 | Task Scheduler | **máy cũ**: `YelpFactoryPostgres` (AtStartup), `YelpFactoryPgBackup` (03:00), `YelpFactoryDaily` (mỗi giờ + RandomDelay 10', chỉ spawn worker nền). **Máy QA 11/11: KHÔNG có task nào** — `Get-ScheduledTask` không trả `YelpFactory*`/`yf*` → mọi job + backup chạy tay (mục 6) |
 | Máy | 4GB RAM → **trần thực tế 2 profile**; timezone máy **UTC-8**; metro NY = EST UTC-5 |
 | GPU/RAM guard | `core/governor` tự hạ concurrency theo RAM |
@@ -128,10 +129,10 @@ Gate review: **trust ≥75 + days_active ≥7 + photos_uploaded ≥8** + cùng m
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup_test_db.ps1
 ```
-→ tạo role `yf_test` + DB `yelp_factory_test` (non-secret, chỉ additive, **không** đụng `.env`/DB thật) rồi `db-init` schema cho DB test; `tests/conftest.py` `setdefault("YF_DATABASE_URL", …)` trỏ suite vào DB test → **suite không bao giờ chạm DB thật `yelp_factory`** (kể cả khi chạy trong `repo/` có `.env` thật). Chưa chạy → `db_ready` **fail** (không còn skip im lặng) → suite đỏ, không phải lỗi code.
+→ tạo role `yf_test` + DB `yelp_factory_test` (non-secret, chỉ additive, **không** đụng `.env`/DB thật) rồi `db-init` schema cho DB test; `tests/conftest.py` `setdefault("YF_DATABASE_URL", …)` trỏ suite vào DB test → **suite không bao giờ chạm DB thật `yelp_factory`** (kể cả khi chạy trong `repo/` có `.env` thật). Chưa chạy → `db_ready` **fail** (không còn skip im lặng) → suite đỏ, không phải lỗi code. Trong **worktree detached** (không `.env`) script tự tìm repo gốc qua `git rev-parse --git-common-dir` (`3dc26f8`) → chạy được **không cần tham số**; vẫn override bằng `-Psql`/`-EnvFile`, và `-DryRun` in 3 đường dẫn trước khi làm gì.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q     # 358 passed, 0 failed, 0 skipped (cần DB test ở bước 0)
+.\.venv\Scripts\python.exe -m pytest tests -q     # 412 passed, 0 failed, 0 skipped (cần DB test ở bước 0)
 .\.venv\Scripts\yf.exe db-check                   # model ↔ DB, phải ok:true
 .\.venv\Scripts\yf.exe volume                     # multiplier (tuần lẻ 0.6)
 .\.venv\Scripts\yf.exe pool-audit
@@ -144,8 +145,10 @@ python -m pytest tests -q    # full suite, DB test -> không được skip
 
 **DB thật ≠ DB suite:** `yelp_factory` = DB thật (`db-check`/`db-init`/backup/fingerprint đều trỏ vào đây); `yelp_factory_test` = DB suite (`tests/conftest.py` tự trỏ vào). `db-check` trên DB thật **không** đại diện cho schema DB test — muốn check DB test thì override `YF_DATABASE_URL` rồi `db-check` lại.
 
+**Knob nhịp giả-lập người `YF_HUMAN_TIME_SCALE`:** mặc định **1.0 = nhịp production** (đọc ở **mỗi lần gọi**, không cache); `tests/conftest.py` `setdefault("YF_HUMAN_TIME_SCALE", "0.0")` → suite chạy nhanh mà **không** đổi assertion. Set env `YF_HUMAN_TIME_SCALE=1.0` để chạy suite với nhịp thật (đo 11/11 tại `4211f82`: **405/0/0 trong 261.12s** so với **22.17s** khi scale=0; tại `4a8e267` → **412/0/0 trong 9.54s**). **Đã phủ hết** (`4a8e267`): `retry_async` (`core/backoff.py`) gọi `human.timing.sleep_s` → `tests/unit/test_state_machine.py::test_quarantine_on_captcha_failure` **15.01s → 0.35s** dù scale=0.
+
 **Điều kiện nghiệm thu (bắt buộc từ 11/11):**
-1. Full suite phải chạy được trên **cây không có `.env`** (token test do `tests/conftest.py` setdefault) — không được copy `.env` vào worktree để "làm xanh" suite, và phải có **0 skipped** (`skipped > 0` là pass giả — đã có 57 test DB bị skip im lặng 2 vòng): **358 passed / 0 failed / 0 skipped**, `tests/unit/test_api_pool.py` 5 passed, `tests/unit/test_email.py` 24 passed, `tests/unit/test_crypto.py` 8 passed, `E-93 + E-95` = 9 passed, không còn xfail.
+1. Full suite phải chạy được trên **cây không có `.env`** (token test do `tests/conftest.py` setdefault) — không được copy `.env` vào worktree để "làm xanh" suite, và phải có **0 skipped** (`skipped > 0` là pass giả — đã có 57 test DB bị skip im lặng 2 vòng): **412 passed / 0 failed / 0 skipped**, `tests/unit/test_api_pool.py` 5 passed, `tests/unit/test_email.py` 24 passed, `tests/unit/test_crypto.py` 8 passed, `E-93 + E-95` = 9 passed, không còn xfail.
 2. Schema phải khớp ở **cả 2** phép đo (mục 6b/6c của `docs/QA_DB_CHECKLIST.md`): `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schema_fingerprint.ps1 -DbName <db> -CompareTo yelp_factory` → **DIFF: 0** *và* `python -m cli db-check` → **ok:true, drift:null**. `DIFF: 0` một mình là **pass giả** (fingerprint không so `NOT NULL`/kiểu cột), và `db-check` không báo thay đổi predicate của partial index → luôn chạy cả hai.
 
 
@@ -183,13 +186,15 @@ Smoke tối thiểu:
 11. **Rotate `YF_MASTER_KEY` sai thứ tự** → mailbox chết âm thầm: `graph_refresh_token` phải còn giá trị cũ lúc rotate; key thiếu/blank/sai độ dài thì blob **được giữ nguyên tại chỗ** (chỉ "box dựng được mà decrypt fail" mới quarantine) — xem ghi chú deploy dưới mục 11, khoản 1.
 12. **Dùng key tạm khi rotate** → mất blob lành: trước `2a6b219` một key gõ sai vẫn dựng được box (nhánh passphrase) nên blob tốt bị quarantine và legacy `.txt` bị mã hoá bằng key rác rồi xoá → mất cả bản plaintext duy nhất. **Đã sửa ở `2a6b219`** (key sai hình dạng → lỗi cấu hình, blob và `.txt` được giữ nguyên) → nay chỉ còn đúng 1 ca quarantine hợp lệ: **key đã xoay** (đúng hình dạng nhưng giải mã sai).
 
+13. **`retry_async` chưa đi qua knob** → **ĐÃ ĐÓNG 11/11 (`4a8e267`)**: `core/backoff.py` `retry_async` dùng `human.timing.sleep_s` (lazy import, không vòng import) → `tests/unit/test_state_machine.py::test_quarantine_on_captcha_failure` **15.01s → 0.35s** dù scale=0; thêm 2 test khoá hành vi để không lùi (nếu ai đổi lại `asyncio.sleep` thì suite vẫn xanh nhưng chậm).
+
 ---
 
 ## 11. Việc tiếp theo (đề xuất)
 
 > **11/11 — sếp chốt: dừng 2 việc P0 còn lại** (4 acc Yelp/mailbox + rewrite history `eac497b`) và chuyển ưu tiên sang **tối ưu & cải thiện tool**. Rủi ro sót (clone cũ còn history `eac497b` + credential 4 acc trong đó) **ghi nhận, không hành động**.
 
-1. **P0 bảo mật — phần local đã đóng 11/11:** ① PAT (sếp revoke) → ② `YF_MASTER_KEY` → ③ `YF_ADMIN_TOKEN` + password Postgres: **đã rotate thật** lúc DB còn 0 dòng (precheck: 0 dòng ciphertext ở cả 5 cột `*_enc`, không có blob `email_refresh_token*` → không cần re-encrypt); sau rotate `db-check` = `ok:true, drift:null` + full suite **358 xanh** trên cây sạch. **Còn lại (đã hủy 11/11):** ④ 4 acc Yelp/mailbox + rewrite history `eac497b`.
+1. **P0 bảo mật — phần local đã đóng 11/11:** ① PAT (sếp revoke) → ② `YF_MASTER_KEY` → ③ `YF_ADMIN_TOKEN` + password Postgres: **đã rotate thật** lúc DB còn 0 dòng (precheck: 0 dòng ciphertext ở cả 5 cột `*_enc`, không có blob `email_refresh_token*` → không cần re-encrypt); sau rotate `db-check` = `ok:true, drift:null` + full suite **358 xanh** trên cây sạch (số lúc rotate; baseline hiện hành **412** — mục 1). **Còn lại (đã hủy 11/11):** ④ 4 acc Yelp/mailbox + rewrite history `eac497b`.
    - **Deploy note khi rotate `YF_MASTER_KEY`** (giữ lại cho lần rotate sau — cập nhật theo `2a6b219` + probe 11/11):
      - **Sinh key mới bằng `core.crypto.generate_master_key()`** — đừng gõ tay: từ `2a6b219` `SecretBox` **bỏ hẳn** nhánh "plain passphrase" và bắt buộc base64 (chuẩn hoặc urlsafe) giải mã ra đúng **16/24/32 byte**; passphrase thuần hay chuỗi sai đều bị từ chối → coi là **lỗi cấu hình**, không phải blob hỏng.
      - **Giữ `graph_refresh_token` cũ trong `.env` lúc rotate**: `build_provider` đọc blob **trước** rồi mới raise `email_config` khi `not graph_client_id or not (graph_refresh_token or token_blob)` → config trống nhưng blob tốt vẫn chạy được; nhưng nếu **không có blob** thì để trống là raise ngay đúng lúc rotate.
@@ -197,11 +202,13 @@ Smoke tối thiểu:
      - **Legacy `.txt` không còn mất nguồn**: key không dùng được → log `refresh_token_legacy_key_missing` và **giữ nguyên** `.txt` plaintext trên đĩa; chỉ khi encrypt thành công mới xoá `.txt` (giá trị cũ giữ dạng `*.legacy.bin`).
      - **Blob `.bin` không phải "chỉ owner đọc được"**: `chmod` là no-op trên Windows; hiện dùng `icacls /inheritance:r /grant:r <user>:F` cho blob nhưng `repo\.env` vẫn `Authenticated Users:(M)` → hygiene, không phải blocker của rotate.
 2. **Tối ưu & cải thiện tool (ưu tiên mới — top 3 @MAI, chờ @MINH chốt roadmap):**
-   - **Số đo mới 11/11 (@AN `--durations=25`) làm 2 item dưới KHÔNG còn đúng giả thuyết**: "DB fixture session-scope" — top durations là fake-browser sleep 37/35/34/30/29s (`test_review_poster`/`test_post_review`), test DB chỉ 0.13–0.24s; "discover_base_url" — **0 caller** trong `src/`+tests (dead code, 95s/lần khi GPM tắt). Item metrics (4/8 chưa từng set) thì đúng. **Chờ @MINH chốt roadmap sáng mai** — danh sách dưới là bản đề xuất cũ, đọc số đo mới ở đây trước khi giao.
-   - **S — DB fixture session-scope** (`tests/conftest.py:113` `db_ready` mở `session_scope()` mỗi test; `make_account` teardown xoá 9 bảng cho từng test) → 17 file dùng `db_ready`, mỗi vòng verify ~250s chủ yếu là chờ round-trip Postgres. **Đo trước** bằng `pytest -q --durations=15` (probe `data\durations_probe.bat` đã viết, chưa chạy) rồi mới sửa.
-   - **S — metrics "xanh giả"**: `obs/metrics.py` khai `signup_duration_seconds`, `active_profiles`, `proxy_health_ratio`, `queue_depth`, `step_failures_total` nhưng `src/` chỉ `.inc()` cho `signup_total`/`step_failures_total`/`warming_actions_total`/`selector_miss_total` → `/metrics` (`api/admin.py:61`) trả **0 vĩnh viễn** cho thời lượng signup và số profile đang mở.
-   - **M — `discover_base_url` quét 2000 cổng** (`adapters/gpm_http.py:299-327`: `SCAN_RANGE` 8000–10000 × `timeout=0.4`, 64 thread) → worst case ~12s mỗi lần GPM không trả lời, lại chạy đúng ở đường E-01 (GPM down) nên ca lỗi chậm gấp nhiều lần ca thành công; nên cache kết quả.
-   - **Đã có: `yf key-gen`** (`8aeea33`) — in key urlsafe-base64 ra stdout, **không** đọc/ghi `.env`, `--bytes 16|24|32`; DUC đo **366 passed**, chờ @AN verify độc lập.
+   - **Số đo mới 11/11 (@AN `--durations=25`) làm 2 item dưới KHÔNG còn đúng giả thuyết** — và cả 2 **đã đóng xong**, không còn là việc mở: "DB fixture session-scope" — top durations là fake-browser sleep 37/35/34/30/29s (`test_review_poster`/`test_post_review`), test DB chỉ 0.13–0.24s; "discover_base_url" — **0 caller** trong `src/`+tests (dead code, 95s/lần khi GPM tắt). Item metrics (4/8 chưa từng set) thì đúng.
+   - **ĐÃ ĐÓNG — `S — DB fixture session-scope`**: thủ phạm không phải DB mà là **sleep giả-lập-người**; đã xử lý bằng knob `YF_HUMAN_TIME_SCALE` (`9842a68`: default **1.0 = nhịp production**, đọc ở mỗi lần gọi; `tests/conftest.py` `setdefault("0.0")` → test chạy nhanh mà không đổi assertion). Full suite **280.41s → 18.33s** (đo trên máy **có `.env`**; số verify độc lập của @AN trên cây không `.env`: **412/0/0 trong 9.54s** tại `4a8e267` — xem mục 1; tài liệu knob đã vào `docs/USER_GUIDE.md` mục 5.3).
+   - **ĐÃ ĐÓNG — `S — metrics "xanh giả"`** (`48961d1`): đã wire `signup_duration_seconds` / `queue_depth` / `active_profiles` / `proxy_health_ratio`; `proxy_health_ratio` tính từ `proxy_pool.status` (healthy = **không** `dead`), bảng rỗng → `None` và **không** đụng gauge; `/metrics` refresh best-effort (DB lỗi thì giữ sample cũ).
+   - **ĐÃ ĐÓNG — `M — discover_base_url` quét 2000 cổng**: hàm + `SCAN_RANGE` đã **xoá** (`ca3468c`); `GPMHttpClient` đọc `http.port` theo docs GPM (@MAI verify) nên không còn quét cổng.
+   - **ĐÃ CÓ thêm (anti-detect, 11/11)**: `eb320bc` — bỏ `page.set_viewport_size` sau CDP attach (mất `Emulation.setDeviceMetricsOverride` → `screen`/`innerWidth`/`outerWidth` lệch nhau) + 3 counter block/captcha/warming-429; `779af3f` — `yf probe-profile` in thêm khối `signals` (`webdriver` / `platform` / `userAgent` / `webrtcCandidateIp` / `geolocationPermission`) nhưng **máy QA không có GPM → lệnh luôn trả `GPMUnavailable`** (mục 2), phải chạy trên máy vận hành; `4211f82` — `browser_versions()` engine-aware + `resolve_browser_version()` sort numeric (trước đó `"99.0.x"` thắng `"120.0.x"`); `e01e6e5` — `geolocation_mode=1` (Allow) ngay lúc create profile + bỏ `grant_permissions` runtime (giữ `set_geolocation` — API GPM không có field lat/lon); `4a8e267` — `retry_async` đi qua `human.timing.sleep_s`.
+   - **ĐANG LÀM (batch 1) — ma trận fingerprint v2**: rotate `window_size` + `browser_type` **deterministic từ `account_id`** (module `core/fingerprint_matrix.py` + `YF_FINGERPRINT_SALT` đã có trong working-tree, hook vào `signup.py`/`orchestrator.py`/`cli.py` đang hoàn thiện → **số test sẽ nhảy**, cần re-peg sau khi commit); giữ `os_type=1` tới khi verify trên máy GPM thật; enum GPM đã verify (@MAI): `browser_type` **1=Chrome / 2=Firefox**, `webrtc_mode=1` = theo IP (không phải leak), `geolocation_mode=1` = Allow → chỉ bớt được 1 lệnh CDP `grant_permissions`, vẫn phải `set_geolocation`; `profiles.fingerprint_json` persist `os_type/browser_type/browser_version/window_size` + bump `operation_id` → `reg:<id>:fp1` (đổi salt sau này phải bump `:fp2`).
+   - **Đã có: `yf key-gen`** (`8aeea33`) — in key urlsafe-base64 ra stdout, **không** đọc/ghi `.env`, `--bytes 16|24|32`. (Các con số "366 passed" ở đây là **số cũ**, đã bị các batch sau đẩy lên; **số nghiệm thu hiện hành là 412** — xem mục 1 + mục 8.)
 3. Nhận clients thật → chạy B1 (review + 72h).
 4. Provider mail dự phòng cho fakemailo (POP3/IMAP/API).
 5. Mở rộng lên ~18–20 acc nếu muốn đạt 100 review/tháng (mỗi metro ≤4–8 acc, ASN khác nhau).

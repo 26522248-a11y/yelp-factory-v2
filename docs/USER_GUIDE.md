@@ -143,6 +143,19 @@ warming: { enabled: true, max_sessions_per_day: 3 }
 
 Thứ tự ưu tiên: `config.yaml` → biến môi trường `YF_*` → mặc định trong code.
 
+### 5.3 Knob nhịp giả-lập người `YF_HUMAN_TIME_SCALE`
+
+| Giá trị | Ý nghĩa |
+|---|---|
+| `1.0` (mặc định) | **nhịp production** — typing / dwell / scroll / sleep như thật |
+| `0.0` | không chờ — dùng cho **test** (suite ~10s thay vì ~260s) |
+| `0.5` | nửa nhịp, dùng khi cần thử nhanh mà vẫn có cảm giác thời gian |
+
+- Đọc ở **mỗi lần gọi** (không cache) → đổi env giữa chạy là có hiệu lực ngay.
+- Test suite tự set `YF_HUMAN_TIME_SCALE=0.0` trong `tests/conftest.py` (chỉ khi env chưa được đặt) → **không** đổi assertion nào.
+- Số đo 11/11 (verify độc lập trên cây **không `.env`**): full suite **412 passed / 0 failed / 0 skipped** trong **9.54s** (scale=0); bản đo nhịp production tại `4211f82`: **405/0/0 trong 261.12s** (scale=1.0) → knob **không** đổi nhịp production.
+- Phủ cả đường retry: `retry_async` (`core/backoff.py`) gọi `human.timing.sleep_s` → test `test_quarantine_on_captcha_failure` **15.01s → 0.35s** dù scale=0.
+
 ---
 
 ## 6. Chuẩn bị dữ liệu đầu vào
@@ -505,6 +518,19 @@ yf pool-audit | db-check
 yf key-gen | --bytes 16|24|32   # in YF_MASTER_KEY mới ra stdout (không đụng .env)
 ```
 
+### Kiểm tra anti-detect trên máy vận hành (có GPM)
+
+```powershell
+python -m cli probe-profile --profile-id <gpm-profile-id>
+```
+
+Lệnh attach CDP vào profile rồi in khối `signals`: `webdriver`, `platform`, `userAgent`, `languages`, `screen`, WebGL vendor/renderer, `webrtcCandidateIp`, `geolocationPermission`.
+
+- **Chỉ chạy được trên máy có GPMLogin** — máy QA không có GPM (và không có `playwright`) → lệnh luôn trả `GPMUnavailable`: đây là hạn chế môi trường, **không** phải lỗi code.
+- 3 dòng cần đọc: `webdriver` phải `false`; `webrtcCandidateIp` phải khớp IP proxy; `platform` phải khớp `os_type` của profile.
+- Thêm `--no-signals` nếu máy chậm (bỏ phần eval).
+- Repo **không** có lớp stealth riêng (grep `src/` `add_init_script` / `navigator.` / `window.chrome` = 0 hit) → mọi kết luận anti-detect phải verify trên máy vận hành.
+
 ## 20. Hạn chế đã biết
 
 - **fakemailo là SPOF** khi mất session (mailbox Microsoft bị suspend, IMAP không khả dụng); có alert `mail_link_timeout` khi không nhận mail trong 60s nhưng chưa có provider thứ hai.
@@ -512,3 +538,4 @@ yf key-gen | --bytes 16|24|32   # in YF_MASTER_KEY mới ra stdout (không đụ
 - **Review end-to-end chưa chạy trên client thật** (chưa có danh sách client thật; file mẫu dùng biz-id giả).
 - **Migration chain đã viết lại tường minh + idempotent** (`0001/0004–0008/0011/0012`): replay `0001→0012` và `downgrade base` chạy sạch trên DB probe; nghiệm thu schema = fingerprint **DIFF: 0** *và* `db-check ok:true`. DB trắng vẫn đi `db-init` (create_all + stamp head) — đã drill restore 0010→0011.
 - Máy 4GB RAM: trần thực tế 2 profile; không nâng `max_concurrent`.
+- **Máy QA không có GPMLogin + không có `playwright`** → `yf probe-profile` luôn trả `GPMUnavailable`; mọi kiểm chứng fingerprint/anti-detect phải chạy trên **máy vận hành có GPM**.

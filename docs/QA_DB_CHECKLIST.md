@@ -30,6 +30,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup_test_db.ps1
 - `tests/conftest.py` `setdefault("YF_DATABASE_URL", ...)` -> suite tro toi `yelp_factory_test`,
   nen suite **khong bao gio cham DB that** (ke ca khi chay trong `repo/` co `.env` that).
 - Chay lai script khi role/DB da ton tai la an toan (idempotent).
+- **Worktree detached** (khong co `.env`): script tu tim repo goc qua `git rev-parse --git-common-dir` (`3dc26f8`) -> chay duoc **khong truyen tham so**; van override bang `-Psql`/`-EnvFile`, va `-DryRun` in 3 duong dan truoc khi lam gi.
 - **Chua chay script nay** -> `db_ready` **FAIL** (khong con skip im lang) => suite do la LOI MOI TRUONG, khong phai loi code.
 
 ## 1. Kiem tra DB that (khong duoc skip)
@@ -57,8 +58,27 @@ python -m pytest tests -q
 - Bao cao dung so **thuc chay**: passed / failed / skipped + dong cuoi cua pytest.
 - `skipped > 0` => KHONG duoc coi la pass (skip = DB test chua san).
 - Fail thì chay lai file: `python -m pytest tests/<file> -q -x`.
-- Baseline vong nghiem thu (HEAD `2a6b219`, cay khong co `.env`): **358 passed / 0 failed / 0 skipped**.
-  Con so o HEAD moi hon **CHUA** ghi vao baseline cho toi khi verify doc lap tren cay khong `.env` xanh.
+- Baseline vong nghiem thu (verify doc lap tren cay **khong co `.env`**, HEAD `4a8e267`): **412 passed / 0 failed / 0 skipped**, wall-time 9.54s.
+  - HEAD truoc do `4211f82`: **405/0/0 trong 22.17s**; run them voi `YF_HUMAN_TIME_SCALE=1.0`: **405/0/0 trong 261.12s** (nhip production khong doi).
+  - HEAD hien tai `3dc26f8` chi sua `scripts/setup_test_db.ps1` -> khong doi so test. Ma tran fingerprint v2 dang do trong working-tree -> so se nhay, cho re-peg.
+
+### 2b. Anti-detect: do tin hieu profile (CHI tren may van hanh co GPM)
+
+```powershell
+python -m cli probe-profile --profile-id <gpm-profile-id>
+```
+
+- **May QA khong co GPM** -> lenh luon tra `GPMUnavailable` (connect refused) -> **khong** dung may QA de ket luan gap anti-detect (chi chay tren may van hanh co GPMLogin).
+- Tren may co GPM, doc 3 dong trong khoi `signals`:
+
+  | Truong | Ky vong | Y nghia khi lech |
+  |---|---|---|
+  | `webdriver` | `false` | `true` = CDP/webdriver leak -> de bi phat hien bot |
+  | `webrtcCandidateIp` | khop IP proxy | khac IP proxy = WebRTC leak |
+  | `platform` | `Win32` | lech `os_type` trong fingerprint profile |
+
+- Them `--no-signals` neu may cham (bo phan eval, tong <= ~10s).
+- Day la **bang chung gap 4** (repo khong co lop stealth rieng: grep `src/` `add_init_script` / `navigator.` / `window.chrome` = **0 hit**) -> chi ket luan tren may van hanh.
 
 ## 3. E-93 (trust reachable)
 
