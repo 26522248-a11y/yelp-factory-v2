@@ -409,16 +409,23 @@ class PostReviewWarmRunner:
         return self.geo_center
 
     async def _checkin(self, page, log, *, city: str | None = None) -> str:
-        """Check-in on the business page with geolocation granted + borough coordinates."""
+        """Check-in on the business page with borough coordinates pushed per session.
+
+        The geolocation permission is already granted at profile-create time
+        (``geolocation_mode=1`` = Allow), so no ``grant_permissions`` CDP call is
+        needed here any more: it is redundant and it mutates the permission state
+        mid-session, which is exactly the kind of artefact a bot check looks at.
+        Coordinates still have to be pushed every session: the GPM create API has
+        no lat/lon field.
+        """
         try:
             context = getattr(page, "context", None)
-            if context is not None and hasattr(context, "grant_permissions"):
+            if context is not None and hasattr(context, "set_geolocation"):
                 try:
                     base_lat, base_lon = self._geo_for(city)
                     # 200-300 m scatter inside the account's own borough (C1)
                     lat = base_lat + random.uniform(-0.003, 0.003)
                     lon = base_lon + random.uniform(-0.003, 0.003)
-                    await context.grant_permissions(["geolocation"], origin="https://www.yelp.com")
                     await context.set_geolocation({"latitude": lat, "longitude": lon})
                 except Exception as exc:  # noqa: BLE001
                     log.warning("checkin_geolocation_failed", error=str(exc)[:120])

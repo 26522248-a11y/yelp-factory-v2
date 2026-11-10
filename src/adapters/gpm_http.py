@@ -260,7 +260,11 @@ class GPMHttpClient:
             "task_bar_title": None,
             "webrtc_mode": fingerprint.pop("webrtc_mode", 1),
             "fixed_webrtc_public_ip": "",
-            "geolocation_mode": None,
+            # 1 = Allow at create time (GPM global-v1 enum: 1 Allow / 2 Prompt / 3 Block),
+            # so the browser never shows a permission prompt and no runtime
+            # grant_permissions CDP call is needed. Coordinates are still pushed
+            # per session with set_geolocation; the create API has no lat/lon field.
+            "geolocation_mode": fingerprint.pop("geolocation_mode", 1),
             "canvas_mode": fingerprint.pop("canvas_mode", 1),
             "client_rect_mode": fingerprint.pop("client_rect_mode", 1),
             "webgl_image_mode": fingerprint.pop("webgl_image_mode", 1),
