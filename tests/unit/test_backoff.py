@@ -75,6 +75,47 @@ async def _noop(delay: float) -> None:
     return None
 
 
+async def test_default_sleep_honours_human_time_scale(monkeypatch):
+    """The retry path must be covered by YF_HUMAN_TIME_SCALE (was asyncio.sleep)."""
+    import time
+
+    monkeypatch.setenv("YF_HUMAN_TIME_SCALE", "0.0")
+    calls = {"n": 0}
+
+    async def flaky():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise TimeoutError("boom")
+        return "ok"
+
+    started = time.monotonic()
+    result = await retry_async(flaky, RetryPolicy(max_attempts=3, base_s=5.0, jitter=0))
+    elapsed = time.monotonic() - started
+
+    assert result == "ok"
+    assert calls["n"] == 3
+    assert elapsed < 1.0, f"retry slept {elapsed:.2f}s despite scale=0"
+
+
+async def test_default_sleep_scales_with_env(monkeypatch):
+    """scale is a multiplier, not a boolean: 1% of a 0.2s base must stay tiny."""
+    import time
+
+    monkeypatch.setenv("YF_HUMAN_TIME_SCALE", "0.01")
+    calls = {"n": 0}
+
+    async def flaky():
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise TimeoutError("boom")
+        return "ok"
+
+    started = time.monotonic()
+    await retry_async(flaky, RetryPolicy(max_attempts=2, base_s=0.2, jitter=0))
+    elapsed = time.monotonic() - started
+    assert elapsed < 0.2, f"scale ignored: slept {elapsed:.3f}s"
+
+
 def test_attempt_counter():
     counter = AttemptCounter(max_retries=2)
     assert not counter.exhausted("sms")

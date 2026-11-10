@@ -12,6 +12,18 @@ from obs.log import get_logger
 log = get_logger("backoff")
 
 
+async def human_sleep(seconds: float) -> None:
+    """Default retry sleep: honours YF_HUMAN_TIME_SCALE (human.timing.sleep_s).
+
+    Regression: this used to default to ``asyncio.sleep``, so the human-timing knob
+    never reached the retry path and one captcha test burned 15s at scale=0.
+    Imported lazily to keep the module import graph flat.
+    """
+    from human.timing import sleep_s
+
+    await sleep_s(seconds)
+
+
 @dataclass(slots=True)
 class RetryPolicy:
     max_attempts: int = 3
@@ -53,7 +65,7 @@ async def retry_async(
     on_retry: Callable[[int, Exception], Awaitable[None] | None] | None = None,
     verify: Callable[[], Awaitable[bool]] | None = None,
     retry_if: Callable[[Exception], bool] | None = None,
-    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    sleep: Callable[[float], Awaitable[None]] = human_sleep,
 ):
     last: Exception | None = None
     for attempt in range(1, policy.max_attempts + 1):

@@ -107,6 +107,27 @@ async def test_quarantine_on_captcha_failure():
     assert final == AccountState.QUARANTINED
 
 
+async def test_captcha_retry_backoff_respects_human_scale():
+    """Regression: retry_async used asyncio.sleep, so this burned 15s even at scale=0."""
+    import time
+
+    from adapters.base import CaptchaError
+
+    async def fail_captcha(ctx):
+        raise CaptchaError("two failures")
+
+    stages = [Stage(AccountState.CAPTCHA_SOLVED, fail_captcha)]
+    machine = StateMachine(stages, persist=lambda *a, **k: None)
+    ctx = make_ctx(AccountState.CAPTCHA_SOLVED)
+
+    started = time.monotonic()
+    final = await machine.run(ctx, MemoryStore())
+    elapsed = time.monotonic() - started
+
+    assert final == AccountState.QUARANTINED
+    assert elapsed < 1.0, f"backoff ignored YF_HUMAN_TIME_SCALE ({elapsed:.2f}s)"
+
+
 def test_transitions_block_illegal_jumps():
     assert can_transition(AccountState.NEW, AccountState.PROVISIONING)
     assert not can_transition(AccountState.NEW, AccountState.ACTIVE)
