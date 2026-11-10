@@ -20,12 +20,42 @@ from typing import Any, Callable, Protocol
 import httpx
 
 from adapters.base import EmailError, NoVerificationMail
+from core.crypto import SecretBox
 from obs.log import get_logger
 
 log = get_logger("email")
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 TOKEN_URL = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+
+# AAD binds the encrypted blob to this purpose: a blob lifted from another SecretBox
+# column cannot be replayed as a refresh token.
+REFRESH_TOKEN_AAD = b"email_refresh_token"
+
+
+def _load_refresh_token(path: Path) -> str:
+    """Return the persisted Graph refresh token, or "" when absent/unreadable.
+
+    The token is a credential, so it is stored AES-GCM encrypted with YF_MASTER_KEY.
+    A missing key, a rotated key or a corrupted/plaintext file all degrade to "no token"
+    so the caller falls back to the configured ``graph_refresh_token`` instead of crashing.
+    A legacy plaintext ``email_refresh_token.txt`` (pre-SecretBox layout) is migrated once.
+    """
+    try:
+        if path.exists():
+            return SecretBox().decrypt(path.read_bytes(), aad=REFRESH_TOKEN_AAD).strip()
+        legacy = path.with_suffix(".txt")
+        if legacy.exists():
+            token = legacy.read_text(encoding="utf-8").strip()
+            if token:
+                path.write_bytes(SecretBox().encrypt(token, aad=REFRESH_TOKEN_AAD))
+                path.chmod(0o600)
+                legacy.unlink(missing_ok=True)
+                log.info("refresh_token_migrated_to_secretbox")
+            return token
+    except Exception:  # noqa: BLE001 - never let a bad token file break provider setup
+        log.warning("refresh_token_load_failed")
+    return ""
 
 VERIFY_LINK_RE = re.compile(
     r"https?://(?:www\.)?yelp\.[a-z.]+/(?:signup[/?][^\s\"'<>]*|confirm[^\s\"'<>]*|verify[^\s\"'<>]*)",
@@ -378,16 +408,17 @@ def build_provider(settings) -> EmailProvider:
         raise EmailError("graph credentials missing", code="email_config")
 
     # Microsoft rotates the refresh token on every exchange; keep the newest one on disk so
-    # a crashed worker does not invalidate the mailbox for the next run.
-    token_file = Path(settings.artifacts_dir).parent / "data" / "email_refresh_token.txt"
-    token = token_file.read_text(encoding="utf-8").strip() if token_file.exists() else ""
-    refresh_token = token or cfg.graph_refresh_token
+    # a crashed worker does not invalidate the mailbox for the next run. It is a credential,
+    # so it is written AES-GCM encrypted (SecretBox) - never in clear text.
+    token_file = Path(settings.artifacts_dir).parent / "data" / "email_refresh_token.bin"
+    refresh_token = _load_refresh_token(token_file) or cfg.graph_refresh_token
 
     def persist(new_token: str) -> None:
         try:
             token_file.parent.mkdir(parents=True, exist_ok=True)
-            token_file.write_text(new_token, encoding="utf-8")
-        except OSError:
+            token_file.write_bytes(SecretBox().encrypt(new_token, aad=REFRESH_TOKEN_AAD))
+            token_file.chmod(0o600)
+        except Exception:  # noqa: BLE001 - a failed write must not kill the run
             log.warning("refresh_token_persist_failed")
 
     return GraphMailbox(
