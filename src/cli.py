@@ -915,25 +915,174 @@ def cmd_serve(args) -> int:
     return 0
 
 
-def cmd_probe_profile(args) -> int:
-    """Attach to an existing GPM profile and report what the browser shows."""
+# ---------------------------------------------------------------- probe-profile page signals
+# Read-only anti-detect evidence: what the attached browser actually reports. Plain evaluate()
+# scripts, no patching, so the numbers are honest instead of self-fulfilling.
 
-    async def run():
-        from adapters.browser import attach
+_SIGNAL_JS = """
+() => {
+  const out = {
+    webdriver: navigator.webdriver,
+    platform: navigator.platform,
+    userAgent: navigator.userAgent,
+    languages: navigator.languages,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: navigator.deviceMemory === undefined ? null : navigator.deviceMemory,
+    timezone: null,
+    screen: null,
+    chromeObject: null,
+    chromeRuntime: null,
+    plugins: null,
+    webglVendor: null,
+    webglRenderer: null,
+  };
+  try { out.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+  try { out.chromeObject = !!window.chrome; } catch (e) {}
+  try { out.chromeRuntime = !!(window.chrome && window.chrome.runtime); } catch (e) {}
+  try { out.plugins = navigator.plugins ? navigator.plugins.length : null; } catch (e) {}
+  try {
+    out.screen = {
+      width: window.screen.width, height: window.screen.height,
+      innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+      outerWidth: window.outerWidth, outerHeight: window.outerHeight,
+      devicePixelRatio: window.devicePixelRatio,
+    };
+  } catch (e) {}
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    if (gl) {
+      out.webglRenderer = gl.getParameter(gl.RENDERER);
+      const ext = gl.getExtension("WEBGL_debug_renderer_info");
+      if (ext) {
+        out.webglVendor = gl.getParameter(ext.UNMASKED_VENDOR_WEBGL);
+        out.webglRenderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
+      }
+    }
+  } catch (e) {}
+  return out;
+}
+"""
 
-        settings = get_settings()
-        client = _deps(settings).gpm
-        started = client.start_profile(args.profile_id, window_size="1280,800")
-        browser = await attach(started.cdp_url, timeout_s=settings.gpm.connect_timeout_s)
-        page = browser.page
+# One ICE candidate tells whether WebRTC exposes a non-proxy IP. Bounded by a budget; an empty
+# candidate list is reported as "none" instead of hanging the command.
+_RTC_JS = """
+async (budgetMs) => {
+  if (typeof RTCPeerConnection === "undefined") return "unsupported";
+  const budget = typeof budgetMs === "number" ? budgetMs : 4000;
+  return await new Promise((resolve) => {
+    let settled = false;
+    let pc = null;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { if (pc) pc.close(); } catch (e) {}
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish("none"), budget);
+    try {
+      pc = new RTCPeerConnection({ iceServers: [] });
+      pc.onicecandidate = (event) => {
+        if (!event || !event.candidate) return finish("none");
+        const match = /([0-9]{1,3}(?:\\.[0-9]{1,3}){3})/.exec(event.candidate.candidate || "");
+        if (match) finish(match[1]);
+      };
+      pc.createDataChannel("probe");
+      pc.createOffer().then((offer) => pc.setLocalDescription(offer)).catch(() => finish("error"));
+    } catch (e) {
+      finish("error");
+    }
+  });
+}
+"""
+
+_GEOLOCATION_JS = """
+async () => {
+  try {
+    if (!navigator.permissions || !navigator.permissions.query) return "unsupported";
+    const status = await navigator.permissions.query({ name: "geolocation" });
+    return status.state;
+  } catch (e) {
+    return "unknown";
+  }
+}
+"""
+
+# Per-probe budgets: worst case 3 + 5 + 2 = 10s, so a dead page cannot hang the command.
+_SIGNAL_TIMEOUT_S = 3.0
+_RTC_BUDGET_MS = 4000
+_RTC_TIMEOUT_S = 5.0
+_GEO_TIMEOUT_S = 2.0
+
+
+async def _eval_signal(page, script: str, arg=None, timeout_s: float = _SIGNAL_TIMEOUT_S):
+    """Evaluate one read-only probe; failures degrade to a string instead of aborting."""
+
+    try:
+        return await asyncio.wait_for(page.evaluate(script, arg), timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 - a probe must never break the command
+        return f"error: {type(exc).__name__}"
+
+
+async def collect_page_signals(
+    page,
+    rtc_budget_ms: int = _RTC_BUDGET_MS,
+    signal_timeout_s: float = _SIGNAL_TIMEOUT_S,
+    rtc_timeout_s: float = _RTC_TIMEOUT_S,
+    geo_timeout_s: float = _GEO_TIMEOUT_S,
+) -> dict:
+    """Collect the signals an anti-detect check reads. Best effort, never raises."""
+
+    fingerprint = await _eval_signal(page, _SIGNAL_JS, timeout_s=signal_timeout_s)
+    if not isinstance(fingerprint, dict):
+        fingerprint = {"evaluate": fingerprint}
+    fingerprint["webrtcCandidateIp"] = await _eval_signal(
+        page, _RTC_JS, rtc_budget_ms, timeout_s=rtc_timeout_s
+    )
+    fingerprint["geolocationPermission"] = await _eval_signal(
+        page, _GEOLOCATION_JS, timeout_s=geo_timeout_s
+    )
+    return fingerprint
+
+
+async def probe_profile_report(profile_id: str, collect_signals: bool = True) -> dict:
+    """Start the GPM profile, attach over CDP, read the page + anti-detect signals, release."""
+
+    from adapters.browser import attach
+
+    settings = get_settings()
+    client = _deps(settings).gpm
+    started = client.start_profile(profile_id, window_size="1280,800")
+    browser = await attach(started.cdp_url, timeout_s=settings.gpm.connect_timeout_s)
+    page = browser.page
+    title = None
+    url = None
+    signals: dict = {}
+    try:
         await page.goto("https://www.yelp.com/?locale=en_US", wait_until="domcontentloaded", timeout=60_000)
         title = await page.title()
         url = page.url
+        if collect_signals:
+            signals = await collect_page_signals(page)
+    finally:
+        # Always release the profile: a failed eval must not leak a running browser slot.
         await browser.close()
-        client.stop_profile(args.profile_id)
-        _print({"cdp": started.cdp_url, "process_id": started.process_id, "title": title, "url": url})
+        client.stop_profile(profile_id)
+    return {
+        "cdp": started.cdp_url,
+        "process_id": started.process_id,
+        "title": title,
+        "url": url,
+        "signals": signals,
+    }
 
-    asyncio.run(run())
+
+def cmd_probe_profile(args) -> int:
+    """Attach to an existing GPM profile and report what the browser shows (page + signals)."""
+
+    collect = not getattr(args, "no_signals", False)
+    _print(asyncio.run(probe_profile_report(args.profile_id, collect_signals=collect)))
     return 0
 
 
@@ -1150,8 +1299,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=None)
     serve.set_defaults(func=cmd_serve)
 
-    probe = sub.add_parser("probe-profile", help="attach CDP to a GPM profile and print the page title")
+    probe = sub.add_parser(
+        "probe-profile", help="attach CDP to a GPM profile and print page title + anti-detect signals"
+    )
     probe.add_argument("--profile-id", required=True)
+    probe.add_argument("--no-signals", action="store_true", help="skip the (slower) page evaluate block")
     probe.set_defaults(func=cmd_probe_profile)
 
     proxy = sub.add_parser("proxy-probe", help="check a proxy geo/latency")
