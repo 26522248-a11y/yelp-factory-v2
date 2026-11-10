@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +28,6 @@ from obs.log import get_logger
 log = get_logger("gpm_http")
 
 DEFAULT_PORTS = {"global-v1": 9495, "gpm-v3": 19995}
-SCAN_RANGE = range(8000, 10001)
 DEFAULT_DATA_DIRS = [
     Path(os.environ.get("APPDATA", "")) / "GPMLoginGlobal",
     Path(os.environ.get("LOCALAPPDATA", "")) / "GPMLoginGlobal",
@@ -294,37 +292,6 @@ class GPMHttpClient:
             created_at=item.get("created_at"),
             extra=item,
         )
-
-
-def discover_base_url(flavor: str = "global-v1", timeout: float = 0.4) -> str | None:
-    """Scan 8000-10000 for a live GPM local API (E-01)."""
-    client = GPMHttpClient(flavor=flavor, timeout=timeout)
-
-    def probe(port: int) -> str | None:
-        try:
-            response = httpx.get(
-                f"http://127.0.0.1:{port}/api/v1/groups",
-                timeout=timeout,
-                trust_env=False,
-            )
-            if response.status_code == 200:
-                payload = response.json()
-                sender = str(payload.get("sender", ""))
-                if payload.get("success") and "gpm" in sender.lower():
-                    return f"http://127.0.0.1:{port}"
-        except Exception:
-            return None
-        return None
-
-    try:
-        with ThreadPoolExecutor(max_workers=64) as pool:
-            for result in pool.map(probe, SCAN_RANGE):
-                if result:
-                    log.warning("gpm_port_discovered", url=result)
-                    return result
-    finally:
-        client.close()
-    return None
 
 
 def restart_gpm_app() -> bool:
