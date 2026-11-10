@@ -34,6 +34,7 @@ from adapters.browser import attach
 from adapters.captcha import CaptchaChain, detect as detect_captcha
 from adapters.gpm_ops import ensure_profile, profile_name
 from core.fingerprint_matrix import for_account as fingerprint_for_account
+from core.fingerprint_matrix import window_size_for_profile
 from adapters.proxy_probe import ProxyTarget, probe
 from core.backoff import RetryPolicy
 from core.checkpoints import persist_account_state
@@ -238,7 +239,7 @@ class SignupFlow:
             salt=settings.fingerprint_salt,
             versions_by_engine=versions_by_engine,
         )
-        resolved_browser_version = fp.browser_version or settings.gpm.browser_version
+        resolved_browser_version = fp.browser_version or self.gpm.resolve_browser_version(engine="chromium" if fp.browser_type == 1 else "firefox") or settings.gpm.browser_version
         create_kwargs = dict(
             raw_proxy=raw_proxy,
             browser_version=resolved_browser_version,
@@ -304,6 +305,11 @@ class SignupFlow:
                     profile_row_id = row.id
                 else:
                     existing.status = "active"
+                    if isinstance(existing.fingerprint_json, dict):
+                        existing.fingerprint_json.setdefault("os_type", fp.os_type)
+                        existing.fingerprint_json.setdefault("browser_type", fp.browser_type)
+                        existing.fingerprint_json.setdefault("browser_version", resolved_browser_version)
+                        existing.fingerprint_json.setdefault("window_size", fp.window_size)
                     profile_row_id = existing.id
                 from db.models import Account
 
@@ -335,12 +341,12 @@ class SignupFlow:
         started = None
         last_error: Exception | None = None
         fp = ctx.data.get("fingerprint")
-        window_size = fp.window_size if fp else None
+        window_size = fp.window_size if fp else window_size_for_profile(profile.id)
         for attempt in range(2):
             try:
                 started = self.gpm.start_profile(
                     profile.id,
-                    window_size=window_size if window_size else "1280,800",
+                    window_size=window_size,
                     skip_proxy_check=True,
                 )
                 break
@@ -357,7 +363,7 @@ class SignupFlow:
             # E-02: stop and start once more on a fresh port.
             try:
                 self.gpm.stop_profile(profile.id)
-                restarted = self.gpm.start_profile(profile.id, remote_debugging_port=random.randint(40000, 60000), window_size=window_size if window_size else "1280,800")
+                restarted = self.gpm.start_profile(profile.id, remote_debugging_port=random.randint(40000, 60000), window_size=window_size)
                 browser = await attach(restarted.cdp_url, timeout_s=self.settings.gpm.connect_timeout_s)
                 ctx.data["start_result"] = restarted
             except Exception as inner:  # noqa: BLE001

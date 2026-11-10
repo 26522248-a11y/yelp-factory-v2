@@ -1,4 +1,9 @@
-"""Seed the 4 live GPMLogin profiles into the factory DB (one-off adoption).
+"""Seed live GPMLogin profiles into the factory DB (one-off adoption).
+
+Credentials are NOT stored in this file. They are read from a JSON file outside
+version control (default: data/seed_accounts.json - `data/` is gitignored;
+schema: docs/seed_accounts.example.json). Override the path with
+YF_SEED_ACCOUNTS, the metro with YF_SEED_METRO.
 
 Creates metros, profiles, accounts (READY, profile_complete), a trust snapshot and
 the six warming sessions that review eligibility expects. Idempotent by email.
@@ -6,6 +11,8 @@ the six warming sessions that review eligibility expects. Idempotent by email.
 
 from __future__ import annotations
 
+import json
+import os
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -19,50 +26,47 @@ from core.crypto import SecretBox  # noqa: E402
 from db.models import Account, AccountState, Profile, TrustScore, WarmingSession  # noqa: E402
 from db.session import session_scope  # noqa: E402
 
-METRO = "New York, NY"
+METRO = os.environ.get("YF_SEED_METRO", "New York, NY")
+SEED_FILE = Path(os.environ.get("YF_SEED_ACCOUNTS", str(ROOT / "data" / "seed_accounts.json")))
+REQUIRED_FIELDS = (
+    "email",
+    "password",
+    "gpm",
+    "first",
+    "last",
+    "zip",
+    "city",
+    "user_id",
+    "profile_name",
+)
 
-ACCOUNTS = [
-    {
-        "email": "benita198617nellie966cyjpvk@outlook.com",
-        "password": "c8DeborahueA63tk",
-        "first": "Betty", "last": "M.", "zip": "10001", "city": "Manhattan, NY",
-        "user_id": "tu5rZ7CTBpe6oTZNowzWsg",
-        "gpm": "4c2b5b3c-8c63-4445-80f7-901709433f4c",
-        "profile_name": "Resi US - sess 0486848620",
-    },
-    {
-        "email": "patricialopezsteven924ebtsthxq@outlook.com",
-        "password": "r3LauraoiU34vk",
-        "first": "Jennifer", "last": "B.", "zip": "11201", "city": "Brooklyn, NY",
-        "user_id": "KEdVZKG-MSXbRTxvuvabjA",
-        "gpm": "bf35df54-afa8-4fc7-a3ee-6cac8541266e",
-        "profile_name": "Mobile CA - sess 0496821249",
-    },
-    {
-        "email": "cassie199115heidi722w0cz2w@outlook.com",
-        "password": "a1SharonoaU92ee",
-        "first": "Thomas", "last": "E.", "zip": "11101", "city": "Queens, NY",
-        "user_id": "IfPWol9uBd4CsEZfACGjBg",
-        "gpm": "618de509-6ad4-41bb-9f27-112ba77959e1",
-        "profile_name": "Mobile US - sess 0496579219",
-    },
-    {
-        "email": "helenwrightrichard712ulzr4o34@outlook.com",
-        "password": "h0ElizabethoaU65td",
-        "first": "David", "last": "J.", "zip": "10451", "city": "Bronx, NY",
-        "user_id": "anfLEXysAQlqZKfZcH321w",
-        "gpm": "7b6aae75-9d7c-4f5b-95dd-fb70d984bb51",
-        "profile_name": "Mobile US - sess 0053315574",
-    },
-]
+
+def load_accounts(path: Path = SEED_FILE) -> list[dict]:
+    """Load account specs from a gitignored JSON file (never from source code)."""
+    if not path.exists():
+        raise SystemExit(
+            f"missing seed file: {path}\n"
+            "copy docs/seed_accounts.example.json to data/seed_accounts.json and fill in "
+            "real values (data/ is gitignored, the file must never be committed)"
+        )
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    accounts = raw["accounts"] if isinstance(raw, dict) else raw
+    if not isinstance(accounts, list) or not accounts:
+        raise SystemExit(f"{path}: expected a non-empty list under 'accounts'")
+    for spec in accounts:
+        missing = [field for field in REQUIRED_FIELDS if not spec.get(field)]
+        if missing:
+            raise SystemExit(f"{path}: account {spec.get('email', '<no email>')} missing {missing}")
+    return accounts
 
 
 def main() -> int:
+    accounts = load_accounts()
     metro_id = ensure_metro(METRO)
     box = SecretBox()
     now = datetime.now(timezone.utc)
     created = 0
-    for spec in ACCOUNTS:
+    for spec in accounts:
         with session_scope() as session:
             existing = session.query(Account).filter(Account.email == spec["email"]).one_or_none()
             if existing is not None:

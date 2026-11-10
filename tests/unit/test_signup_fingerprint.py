@@ -13,6 +13,7 @@ from core.fingerprint_matrix import WINDOW_SIZES, for_account, window_size_for_p
 from core.orchestrator import SignupDeps, _start_profile_safely
 from core.state_machine import StageContext
 from db.models import AccountState
+from db.session import session_scope as real_session_scope
 from flows.signup import SignupFlow
 from tests.fakes import FakeBrowser, FakeGPM
 
@@ -152,3 +153,104 @@ def test_start_profile_safely_defaults_to_db_window_size(settings):
         _start_profile_safely(deps, "p1")
 
     assert gpm.started[0].raw["window_size"] == "1600,900"
+
+
+def _mock_session_scope(session):
+    class Ctx:
+        def __enter__(self, *a):
+            return session
+        def __exit__(self, *a):
+            return False
+    return Ctx
+
+
+
+async def test_enter_browser_up_falls_back_to_db_window_size(settings):
+    """Resume path has no ctx fingerprint; read persisted window_size from DB."""
+    flow = SignupFlow(settings=settings, gpm=FakeGPM(), registry=None, email_provider=None)
+    from core.state_machine import StageContext
+    from db.models import AccountState
+    account_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    ctx = StageContext(
+        account_id=account_id,
+        run_id=uuid.uuid4(),
+        state=AccountState.PROXY_BOUND,
+        data={
+            "profile": ProfileDTO(id="p1", name="test", raw_proxy=""),
+            # no "fingerprint" key -> should read DB
+        },
+    )
+    from tests.fakes import FakeBrowser
+    with patch("flows.signup.attach", return_value=FakeBrowser()):
+        with patch("flows.signup.window_size_for_profile", return_value="1536,864"):
+            result = await flow._enter_browser_up(ctx)
+    assert flow.gpm.started[0].raw["window_size"] == "1536,864"
+
+
+async def test_persist_profile_backfills_existing_row(settings):
+    """A reused profile row gets the 4 matrix fields written if missing."""
+    flow = SignupFlow(settings=settings, gpm=FakeGPM(), registry=None, email_provider=None)
+    from core.state_machine import StageContext
+    from db.models import AccountState
+    from core.fingerprint_matrix import for_account
+    account_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    fp = for_account(account_id)
+    ctx = StageContext(
+        account_id=account_id,
+        run_id=uuid.uuid4(),
+        state=AccountState.NEW,
+        data={},
+    )
+    existing = MagicMock()
+    existing.fingerprint_json = {"browser": "119.0"}  # legacy row without matrix fields
+    session = MagicMock()
+    session.query.return_value.filter_by.return_value.one_or_none.return_value = existing
+    with patch("db.session.session_scope", _mock_session_scope(session)):
+        flow._persist_profile(ctx, ProfileDTO(id="p1", name="test"), "", fp, "120.0.1")
+    assert existing.fingerprint_json["os_type"] == fp.os_type
+    assert existing.fingerprint_json["browser_type"] == fp.browser_type
+    assert existing.fingerprint_json["browser_version"] == "120.0.1"
+    assert existing.fingerprint_json["window_size"] == fp.window_size
+
+
+async def test_persist_profile_keeps_existing_window_size(settings):
+    """Backfill must not overwrite an already-persisted matrix value."""
+    flow = SignupFlow(settings=settings, gpm=FakeGPM(), registry=None, email_provider=None)
+    from core.state_machine import StageContext
+    from db.models import AccountState
+    from core.fingerprint_matrix import for_account
+    account_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    fp = for_account(account_id)
+    ctx = StageContext(account_id=account_id, run_id=uuid.uuid4(), state=AccountState.NEW, data={})
+    existing = MagicMock()
+    existing.fingerprint_json = {"window_size": "1600,900", "browser_version": "130.0"}
+    session = MagicMock()
+    session.query.return_value.filter_by.return_value.one_or_none.return_value = existing
+    with patch("db.session.session_scope", _mock_session_scope(session)):
+        flow._persist_profile(ctx, ProfileDTO(id="p1", name="test"), "", fp, "120.0.1")
+    assert existing.fingerprint_json["window_size"] == "1600,900"
+    assert existing.fingerprint_json["browser_version"] == "130.0"
+    assert existing.fingerprint_json["os_type"] == fp.os_type
+
+
+def test_browser_versions_parses_nested_browser_object():
+    from adapters.gpm_http import GPMHttpClient
+    client = object.__new__(GPMHttpClient)
+    client._extract_browser_engine = GPMHttpClient._extract_browser_engine
+    def fake_call(method, path):
+        return [
+            {"id": "1", "browser": {"name": "chrome", "version": "120.0.1"}},
+            {"id": "2", "browser": {"name": "firefox", "version": "130.0.1"}, "engine": "firefox"},
+        ]
+    client._call = fake_call
+    versions = client.browser_versions()
+    assert versions["chromium"] == ["120.0.1"]
+    assert versions["firefox"] == ["130.0.1"]
+
+
+def test_resolve_browser_version_uses_fallback_when_browsers_empty():
+    from adapters.gpm_http import GPMHttpClient
+    client = object.__new__(GPMHttpClient)
+    client.browser_versions = lambda: {}
+    client.list_profiles = lambda: [ProfileDTO(id="p1", name="x", browser_version="119.0.2")]
+    assert client.resolve_browser_version(engine="chromium") == "119.0.2"

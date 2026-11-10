@@ -238,6 +238,11 @@ class FakeGPM:
     def browser_versions(self):
         return {}
 
+    def resolve_browser_version(self, preferred: str = "", *, engine: str = "chromium") -> str:
+        if preferred:
+            return preferred
+        return ""
+
     def start_profile(self, profile_id: str, **kwargs):
         if self.fail_start:
             from adapters.base import GPMUnavailable

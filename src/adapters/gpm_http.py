@@ -190,11 +190,19 @@ class GPMHttpClient:
                 continue
             engine = self._extract_browser_engine(item)
             version: str | None = None
-            for key in ("version", "browser_version", "name"):
+            for key in ("version", "browser_version"):
                 value = item.get(key)
                 if isinstance(value, str) and value.count(".") >= 2:
                     version = value
                     break
+            if not version:
+                browser = item.get("browser") or {}
+                if isinstance(browser, dict):
+                    for key in ("version", "browser_version", "name"):
+                        value = browser.get(key)
+                        if isinstance(value, str) and value.count(".") >= 2:
+                            version = value
+                            break
             if version:
                 result.setdefault(engine, []).append(version)
         return result
@@ -207,17 +215,29 @@ class GPMHttpClient:
         is intentionally defensive and case-insensitive. Unknown shapes default
         to ``chromium`` (the historical assumption).
         """
-        for key in ("engine", "type", "browser_type", "browser_engine", "kind"):
-            value = item.get(key)
-            if isinstance(value, str):
-                value_l = value.lower()
-                if "firefox" in value_l or value_l == "2":
-                    return "firefox"
-                if "chromium" in value_l or "chrome" in value_l or value_l == "1":
-                    return "chromium"
-            elif isinstance(value, int):
-                # GPM enum: 1=Chrome(chromium), 2=Firefox
-                return "firefox" if value == 2 else "chromium"
+        # GPM global-v1 nests the engine as {"browser": {"name": "chrome"|"firefox"}},
+        # so check that object first, then the flat field names used by older builds.
+        nested = item.get("browser")
+        sources: list[Mapping[str, Any]] = []
+        if isinstance(nested, Mapping):
+            sources.append(nested)
+        sources.append(item)
+        for source in sources:
+            for key in ("engine", "type", "browser_type", "browser_engine", "kind", "name"):
+                value = source.get(key)
+                if isinstance(value, str):
+                    value_l = value.lower()
+                    if "firefox" in value_l:
+                        return "firefox"
+                    if "chromium" in value_l or "chrome" in value_l:
+                        return "chromium"
+                    if value_l == "2":
+                        return "firefox"
+                    if value_l == "1":
+                        return "chromium"
+                elif isinstance(value, int) and not isinstance(value, bool):
+                    # GPM enum: 1=Chrome(chromium), 2=Firefox
+                    return "firefox" if value == 2 else "chromium"
         return "chromium"
 
     def resolve_browser_version(

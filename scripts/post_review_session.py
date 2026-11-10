@@ -7,8 +7,12 @@ two runs can never overlap, and raises alert files on failures.
 
 Usage:
     python scripts/post_review_session.py \
-        --profile-id <gpm-profile> --email a@outlook.com --password pw \
+        --profile-id <gpm-profile> --email a@outlook.com \
         --user-id tu5r... --city "Brooklyn, NY" --minutes 120
+
+The password is never passed on the command line: it is decrypted from
+accounts.password_enc using YF_MASTER_KEY. --password stays available for a
+throwaway account that is not in the DB yet.
 """
 
 from __future__ import annotations
@@ -125,13 +129,34 @@ def _release_lock(path: Path | None) -> None:
             pass
 
 
+def _password_from_db(email: str) -> str | None:
+    """Decrypt accounts.password_enc for this email; None when the account is absent."""
+    try:
+        from core.crypto import SecretBox
+        from db.models import Account
+        from db.session import session_scope
+
+        with session_scope() as session:
+            row = session.query(Account).filter(Account.email == email).one_or_none()
+            if row is None or row.password_enc is None:
+                return None
+            return SecretBox().decrypt(row.password_enc)
+    except Exception as exc:  # noqa: BLE001
+        print(json.dumps({"error": "password_decrypt_failed", "detail": str(exc)[:200]}))
+        return None
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--profile-id", default=None, help="GPM profile id; the script starts/stops it via the GPM API")
     parser.add_argument("--port", type=int, default=None, help="attach to an already-running GPM browser")
     parser.add_argument("--mail-profile-id", default=None, help="mail-reader GPM profile for fakemailo (E-67)")
     parser.add_argument("--email", required=True)
-    parser.add_argument("--password", required=True)
+    parser.add_argument(
+        "--password",
+        default=None,
+        help="omit to decrypt password_enc for --email from the DB (YF_MASTER_KEY)",
+    )
     parser.add_argument("--user-id", default=None)
     parser.add_argument("--city", default=None, help="account metro, e.g. 'Brooklyn, NY'")
     parser.add_argument("--minutes", type=int, default=None, help="cap session minutes (omit = random 25-90)")
@@ -140,6 +165,14 @@ async def main() -> int:
     args = parser.parse_args()
 
     settings = load_settings()
+    password = args.password
+    if password is None:
+        password = _password_from_db(args.email)
+        if password is None:
+            print(json.dumps({"error": "password_not_found", "email": args.email,
+                              "hint": "pass --password or seed the account first"}))
+            return 2
+
     if not args.ignore_window and not within_window(start=settings.post_review.window_start, end=settings.post_review.window_end):
         print(json.dumps({"status": "SKIPPED", "reason": "outside_window"}))
         return 0
@@ -220,7 +253,7 @@ async def main() -> int:
                 )
                 flow = LoginFlow(registry=SelectorRegistry.from_yaml(), settings=settings, email_provider=mail)
                 try:
-                    result = await flow.run(page, email=args.email, password=args.password, user_id=args.user_id)
+                    result = await flow.run(page, email=args.email, password=password, user_id=args.user_id)
                     print(json.dumps({"login": result.to_json()}))
                     login_ok = result.ok
                 except Exception as exc:  # noqa: BLE001

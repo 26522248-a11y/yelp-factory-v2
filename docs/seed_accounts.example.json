@@ -1,0 +1,16 @@
+{
+  "_comment": "Schema for data/seed_accounts.json (gitignored). Copy this file, fill REAL values, keep it out of git.",
+  "accounts": [
+    {
+      "email": "<account-email>",
+      "password": "<account-password>",
+      "first": "First",
+      "last": "L.",
+      "zip": "10001",
+      "city": "Manhattan, NY",
+      "user_id": "<yelp-user-id>",
+      "gpm": "<gpm-profile-uuid>",
+      "profile_name": "Resi US - sess <id>"
+    }
+  ]
+}
