@@ -28,10 +28,10 @@ Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **358 test pass,
 | Repo | `C:\Users\Administrator\Documents\Default Project\yelp-factory` |
 | venv | `.venv` → dùng `.\.venv\Scripts\python.exe`, CLI `.\.venv\Scripts\yf.exe` |
 | Git | portable `C:\minGit\cmd\git.exe` (chưa có trong PATH) |
-| Postgres 16 (portable) | binaries `data/pg/pgsql`, data dir `data/pgdata`, **port 5433**, user `postgres`, password `postgres`, DB `yelp_factory` |
-| Backup | `C:\pgbackup` (dump 03:00 hằng ngày, giữ 14; **không** chứa bản `.env` — chỉ ghi tên key) |
+| Postgres 16 (portable) | binaries `data/pg/pgsql`, data dir `data/pgdata`, **port 5433**, user `postgres`, password **đọc từ `.env`** (đã rotate 11/11 — `postgres:postgres` **không còn đúng**), DB `yelp_factory` |
+| Backup | `C:\pgbackup` (**máy cũ**: dump 03:00 hằng ngày, giữ 14; **không** chứa bản `.env` — chỉ ghi tên key). **Máy QA 11/11: chạy TAY** bằng `scripts\backup_postgres.ps1` — chưa có scheduled task (mục 6) |
 | Máy QA (11/11) | repo `E:\Default Project\ai-team-workspace\repo`, Python 3.12 hệ thống (không có `.venv`), Postgres portable đã dựng tại `data/pg/pgsql` + `data/pgdata` |
-| Task Scheduler | `YelpFactoryPostgres` (AtStartup), `YelpFactoryPgBackup` (03:00), `YelpFactoryDaily` (mỗi giờ + RandomDelay 10', chỉ spawn worker nền) |
+| Task Scheduler | **máy cũ**: `YelpFactoryPostgres` (AtStartup), `YelpFactoryPgBackup` (03:00), `YelpFactoryDaily` (mỗi giờ + RandomDelay 10', chỉ spawn worker nền). **Máy QA 11/11: KHÔNG có task nào** — `Get-ScheduledTask` không trả `YelpFactory*`/`yf*` → mọi job + backup chạy tay (mục 6) |
 | Máy | 4GB RAM → **trần thực tế 2 profile**; timezone máy **UTC-8**; metro NY = EST UTC-5 |
 | GPU/RAM guard | `core/governor` tự hạ concurrency theo RAM |
 
@@ -39,7 +39,7 @@ Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **358 test pass,
 > `C:\pg16` / `C:\pgdata2` / user `pguser` là cấu hình riêng của máy cũ (chạy dưới Administrator), **không dùng lại**.
 > Dựng lại ở máy mới/QA: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\setup_pg_portable.ps1`.
 
-**Đặc thù Postgres trên máy này:** không chạy được dưới Administrator (lỗi 0xC0000142 khi spawn backend). Phải chạy bằng user `pguser` qua `Start-Process -Credential` (xem task `YelpFactoryPostgres`).
+**Đặc thù Postgres (máy cũ, dưới Administrator):** không chạy được dưới Administrator (lỗi 0xC0000142 khi spawn backend) → phải chạy bằng user `pguser` qua `Start-Process -Credential` (task `YelpFactoryPostgres`). **Máy QA 11/11: không có task nào** → Postgres portable chạy tay theo `scripts\setup_pg_portable.ps1` (mục 6).
 
 ---
 
@@ -109,6 +109,7 @@ Gate review: **trust ≥75 + days_active ≥7 + photos_uploaded ≥8** + cùng m
 - `YelpFactoryDaily` mỗi giờ + jitter 10' → spawn worker nền (không chặn task) → trust recompute (1/ngày) → assign (1/ngày) → warm sweep (gate 08:00–20:00 **giờ metro**, ≤2 slot) → probe (3 ngày/lần, bỏ nếu warm <12h) → review post (due) → review check (1/ngày) → volume → clean-artifacts 30 ngày
 - Cửa sổ 08:00–20:00 giờ địa phương của metro (NY = 05:00–17:00 giờ máy)
 - Log: `artifacts/daily/`; alert: `artifacts/alerts/`; ảnh/html fail: `artifacts/login/`; state JSON fallback: `artifacts/post_review_state/`
+- **Máy QA (11/11): KHÔNG có Task Scheduler nào** — `Get-ScheduledTask` không trả task `YelpFactory*`/`yf*` (tên task ở mục 2 là của **máy cũ**) → các job nêu trên **và** backup đều **chạy tay**; `scripts\backup_postgres.ps1` verify 11/11: **exit 0**, dump **54.360 byte**, log `OK`. **Scheduled task chưa wire** theo quyết định của @MINH (đổi cấu hình hệ thống) — chỉ wire khi lên máy vận hành thật và sếp gật.
 
 ---
 

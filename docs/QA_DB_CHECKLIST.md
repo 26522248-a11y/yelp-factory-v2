@@ -133,12 +133,15 @@ replaying the broken chain").
    Ky vong: thay `0012_email_pool_lower_unique.py`. Neu thieu -> migration chua nam trong git,
    `upgrade` tren may khac se khong co gi de chay: commit truoc khi deploy.
 
-1. Backup (bat buoc, phai co file dump > 0 byte):
+1. Backup (bat buoc, phai co file dump > 0 byte) - **BUOC TAY, khong co scheduled task**:
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File scripts\backup_postgres.ps1
    ```
    File dump: `C:\pgbackup\yelp_factory_<timestamp>.dump`; script ghi them
    `env_keys_<timestamp>.txt` chi chua **ten key**, khong co gia tri - `.env` phai luu rieng.
+   **Luu y (may QA 11/11):** khong co Task Scheduler nao (`Get-ScheduledTask` khong tra
+   `YelpFactory*`/`yf*`) -> backup **phai chay tay**, khong job 03:00 nao tu chay. Script da
+   sua de doc password tu `.env` (verify 11/11: exit 0, dump **54.360 byte**, log `OK`).
 2. Kiem tra dump phuc hoi duoc (khong tin "co file dump" la du):
    ```powershell
    $env:PGPASSWORD = [uri]::UnescapeDataString((Select-String -Path .env -Pattern '^YF_DATABASE_URL=[^:]*://[^:@]*:(.+)@').Matches[0].Groups[1].Value)
@@ -170,6 +173,9 @@ replaying the broken chain").
 Da verify tren may QA (03:49, 10/11): `backup_postgres.ps1` chay exit 0 -> dump 53.834 byte,
 152 TOC entry, Postgres 16.6; `pg_restore -l` doc; restore round-trip vao `yf_restore_probe` ra
 28 table khop het, `alembic_version = 0012_email_pool_lower_unique` khop DB nguon.
+Da verify lai 11/11 (sau khi `backup_postgres.ps1` sua de doc password tu `.env` thay vi hardcode):
+exit 0 -> dump **54.360 byte**, log `OK`, khong co secret nao lot ra stdout. Van la **buoc tay**
+(may QA khong co scheduled task) - xem muc 6 buoc 1.
 Da verify them tren may QA (probe rieng cua @AN: DB `yf_p5` / `yf_p6`, khong dung DB that):
 - FK-abort dung: `upgrade head` chet voi `ForeignKeyViolation`, alembic kiet `0011`, du lieu nguyen (khong xoa am tham).
 - `downgrade 0012 -> 0011` chay sach (`idx_after_down = 0`), re-upgrade lap lai duoc.
@@ -231,6 +237,7 @@ Ket qua: X passed, Y failed, Z skipped trong Ns
 E-93 + E-95: <pass/fail> (ky vong 9 passed)
 Mailbox unique: index `uq_email_pool_mailbox_email_lower` co trong pg_indexes: <yes/no>
 Rollback window: da dump rieng bang `email_pool` truoc downgrade, khong chay traffic o `0011`: <yes/no>
+Backup (BUOC TAY, may QA khong co scheduled task): `scripts\backup_postgres.ps1` exit <0/1>, dump <n> byte: <yes/no>
 Fingerprint baseline: <3c784299... 27/54/60> | DIFF vs yelp_factory: <n>
 db-check tren DB chain-replay: ok:<true/false> (ca 2 moi tinh la khop schema)
 ```
