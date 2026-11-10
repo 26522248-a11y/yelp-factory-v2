@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,23 @@ DEFAULT_DATA_DIRS = [
     Path(os.environ.get("LOCALAPPDATA", "")) / "GPMLoginGlobal",
     Path("C:/GPMLogin"),
 ]
+
+
+_RE_VERSION_PARTS = re.compile(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?.*$")
+
+
+def _version_sort_key(version: str) -> tuple[int, int, int, str]:
+    """Numeric tuple so that ``120.0.x`` sorts after ``99.0.x``."""
+    match = _RE_VERSION_PARTS.match(version.strip())
+    if not match:
+        return (0, 0, 0, version)
+    major, minor, patch = match.groups()
+    return (
+        int(major or 0),
+        int(minor or 0),
+        int(patch or 0),
+        version,
+    )
 
 
 def _app_is_alive(app: Any) -> bool:
@@ -150,30 +169,66 @@ class GPMHttpClient:
             raise GPMSchemaDrift("profile payload missing id", meta={"payload": data})
         return self._to_profile(data)
 
-    def browser_versions(self) -> list[str]:
-        """Ask GPM which browser builds are installed; the create call requires one."""
+    def browser_versions(self) -> dict[str, list[str]]:
+        """Ask GPM which browser builds are installed, grouped by engine.
+
+        The create call requires a version string. GPM payloads vary; we accept
+        several likely field names for the engine/type and fall back to
+        ``chromium`` when the payload does not expose one, preserving today's
+        behaviour for existing installs.
+        """
         try:
             data = self._call("GET", "/api/v1/browsers")
         except GPMError:
-            return []
-        versions: list[str] = []
+            return {}
+        result: dict[str, list[str]] = {}
         for item in data or []:
-            if isinstance(item, dict):
-                for key in ("version", "browser_version", "name"):
-                    value = item.get(key)
-                    if isinstance(value, str) and value.count(".") >= 2:
-                        versions.append(value)
-                        break
-            elif isinstance(item, str) and item.count(".") >= 2:
-                versions.append(item)
-        return versions
+            if isinstance(item, str) and item.count(".") >= 2:
+                result.setdefault("chromium", []).append(item)
+                continue
+            if not isinstance(item, Mapping):
+                continue
+            engine = self._extract_browser_engine(item)
+            version: str | None = None
+            for key in ("version", "browser_version", "name"):
+                value = item.get(key)
+                if isinstance(value, str) and value.count(".") >= 2:
+                    version = value
+                    break
+            if version:
+                result.setdefault(engine, []).append(version)
+        return result
 
-    def resolve_browser_version(self, preferred: str = "") -> str:
+    @staticmethod
+    def _extract_browser_engine(item: Mapping[str, Any]) -> str:
+        """Return ``chromium`` or ``firefox`` from a GPM browser payload item.
+
+        Engine field names and value shapes differ across GPM builds, so this
+        is intentionally defensive and case-insensitive. Unknown shapes default
+        to ``chromium`` (the historical assumption).
+        """
+        for key in ("engine", "type", "browser_type", "browser_engine", "kind"):
+            value = item.get(key)
+            if isinstance(value, str):
+                value_l = value.lower()
+                if "firefox" in value_l or value_l == "2":
+                    return "firefox"
+                if "chromium" in value_l or "chrome" in value_l or value_l == "1":
+                    return "chromium"
+            elif isinstance(value, int):
+                # GPM enum: 1=Chrome(chromium), 2=Firefox
+                return "firefox" if value == 2 else "chromium"
+        return "chromium"
+
+    def resolve_browser_version(
+        self, preferred: str = "", *, engine: str = "chromium"
+    ) -> str:
         if preferred:
             return preferred
-        versions = self.browser_versions()
+        versions_by_engine = self.browser_versions()
+        versions = versions_by_engine.get(engine) or versions_by_engine.get("chromium", [])
         if versions:
-            return sorted(versions)[-1]
+            return max(versions, key=_version_sort_key)
         # last resort: reuse the build of an existing profile
         try:
             for profile in self.list_profiles():
@@ -189,16 +244,17 @@ class GPMHttpClient:
         *,
         raw_proxy: str | None = None,
         browser_version: str = "",
-        os_type: int = 1,
         browser_type: int = 1,
+        os_type: int = 1,
         **fingerprint: Any,
     ) -> ProfileDTO:
+        engine = "firefox" if browser_type == 2 else "chromium"
         body = {
             "name": name,
             "group_id": None,
             "raw_proxy": raw_proxy or "",
             "browser_type": browser_type,
-            "browser_version": browser_version or self.resolve_browser_version(),
+            "browser_version": browser_version or self.resolve_browser_version(engine=engine),
             "os_type": os_type,
             "custom_user_agent": None,
             "task_bar_title": None,
