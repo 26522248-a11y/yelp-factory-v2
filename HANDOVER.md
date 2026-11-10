@@ -17,7 +17,7 @@ Tự động hoá vòng đời tài khoản Yelp trên browser thật (GPMLogin 
 | Review phase | sinh bài chống-bot (chi tiết thật, khuyết điểm nhẹ, 30% 4★, ảnh bắt buộc, dedupe), đăng, check 72h |
 | Vận hành | DB slot ≤2 profile, lock per-account, task scheduler, backup, alert, audit, db-check |
 
-Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **332 test pass, 0 failed, 0 skipped** (đo trên HEAD `ab6a38c`, cây **không có `.env`**).
+Repo: Python 3.12, Postgres 16, Playwright, SQLAlchemy/Alembic. **339 test pass, 0 failed, 0 skipped** (đo trên HEAD `6a7ab5d`, cây **không có `.env`**).
 
 ---
 
@@ -124,7 +124,7 @@ Gate review: **trust ≥75 + days_active ≥7 + photos_uploaded ≥8** + cùng m
 ## 8. Chạy & kiểm thử
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q     # 332 passed, 0 failed, 0 skipped (DB phải chạy)
+.\.venv\Scripts\python.exe -m pytest tests -q     # 339 passed, 0 failed, 0 skipped (DB phải chạy)
 .\.venv\Scripts\yf.exe db-check                   # model ↔ DB, phải ok:true
 .\.venv\Scripts\yf.exe volume                     # multiplier (tuần lẻ 0.6)
 .\.venv\Scripts\yf.exe pool-audit
@@ -136,7 +136,7 @@ python -m pytest tests -q    # full suite, DB thật -> không được skip
 ```
 
 **Điều kiện nghiệm thu (bắt buộc từ 11/11):**
-1. Full suite phải chạy được trên **cây không có `.env`** (token test do `tests/conftest.py` setdefault) — không được copy `.env` vào worktree để "làm xanh" suite: **332 passed / 0 failed / 0 skipped**, `tests/unit/test_api_pool.py` 5 passed, `E-93 + E-95` = 9 passed, không còn xfail.
+1. Full suite phải chạy được trên **cây không có `.env`** (token test do `tests/conftest.py` setdefault) — không được copy `.env` vào worktree để "làm xanh" suite: **339 passed / 0 failed / 0 skipped**, `tests/unit/test_api_pool.py` 5 passed, `tests/unit/test_email.py` 13 passed, `E-93 + E-95` = 9 passed, không còn xfail.
 2. Schema phải khớp ở **cả 2** phép đo (mục 6b/6c của `docs/QA_DB_CHECKLIST.md`): `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\schema_fingerprint.ps1 -DbName <db> -CompareTo yelp_factory` → **DIFF: 0** *và* `python -m cli db-check` → **ok:true, drift:null**. `DIFF: 0` một mình là **pass giả** (fingerprint không so `NOT NULL`/kiểu cột), và `db-check` không báo thay đổi predicate của partial index → luôn chạy cả hai.
 
 
@@ -171,12 +171,18 @@ Smoke tối thiểu:
 8. **Magic link IP mismatch**: link lấy qua profile Resi, mở ở IP acc — chạy được nhưng có thể chết phiên ngẫu nhiên.
 9. **Timezone**: máy UTC-8 nhưng metro NY UTC-5; mọi gate theo giờ metro, "1 phiên/ngày" theo ngày lịch metro.
 10. **Trust deadlock (đã sửa)**: nếu thiếu thành phần `warm`, trần không-review là 70 < 75 → không bao giờ review được.
+11. **Rotate `YF_MASTER_KEY` sai thứ tự** → mailbox chết âm thầm: `graph_refresh_token` phải còn giá trị cũ lúc rotate, và blob tốt sẽ bị quarantine nếu key thiếu/blank (xem ghi chú deploy dưới mục 11, khoản 1).
 
 ---
 
 ## 11. Việc tiếp theo (đề xuất)
 
 1. **P0 bảo mật (thứ tự đã chốt):** revoke PAT → rotate `YF_MASTER_KEY` (DB còn 0 dòng) → `YF_ADMIN_TOKEN` + password Postgres → 4 acc Yelp/mailbox cuối cùng; rewrite history chỉ sau khi đã xoá hết clone cũ, và repo đã 404 ẩn danh thì vẫn phải kiểm tra từ tài khoản có quyền (fork/cũ).
+   - **Deploy note khi rotate `YF_MASTER_KEY`** (rủi ro đo bằng probe 11/11 — cần xử lý trước khi đổi key):
+     - **Giữ `graph_refresh_token` cũ trong `.env` lúc rotate**: `email.py:473` kiểm tra `graph_client_id`/`graph_refresh_token` **trước** khi đọc blob → để trống sẽ raise `email_config` dù blob trên đĩa còn giải mã được (mailbox chết ngay đúng lúc rotate).
+     - **Phân biệt "chưa có key" với "blob hỏng"**: khi `YF_MASTER_KEY` thiếu/blank, code log ERROR rồi **quarantine cả blob tốt** thành `email_refresh_token.corrupt-<ts>.bin` (giá trị vẫn giải mã được bằng key cũ, không mất) → có key lại thì load rỗng và mailbox dùng token cũ đã chết.
+     - **Legacy `.txt` chỉ bị xoá khi encrypt được**: key không dùng được thì sweep fail và `.txt` plaintext **vẫn nằm trên đĩa** — phải xoá tay trước khi giao máy.
+     - **Blob `.bin` không phải "chỉ owner đọc được"**: `chmod` là no-op trên Windows; hiện dùng `icacls /inheritance:r /grant:r <user>:F` cho blob nhưng `repo\.env` vẫn `Authenticated Users:(M)` → hygiene, không phải blocker của rotate.
 2. Nhận clients thật → chạy B1 (review + 72h).
 3. Provider mail dự phòng cho fakemailo (POP3/IMAP/API).
 4. Mở rộng lên ~18–20 acc nếu muốn đạt 100 review/tháng (mỗi metro ≤4–8 acc, ASN khác nhau).
