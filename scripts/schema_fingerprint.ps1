@@ -12,15 +12,19 @@
     powershell -File scripts\schema_fingerprint.ps1 -DbName yf_chain_probe -CompareTo yelp_factory
   Ky vong: "DIFF: 0" va cung fingerprint.
 
-  Tham so mac dinh khop Postgres portable cua repo (data/pg/pgsql, port 5433, user postgres).
+  Tham so mac dinh khop Postgres portable cua repo (data/pg/pgsql, port 5433).
+  Credentials duoc doc tu repo\.env (YF_DATABASE_URL) - KHONG hardcode password o day,
+  vi password da rotate trong .env nen default cu se fail authentication.
+  Password khong bao gio duoc in ra.
 #>
 param(
   [string]$DbName = "yelp_factory",
   [string]$CompareTo = "",
-  [string]$DbHost = "127.0.0.1",
-  [int]$Port = 5433,
-  [string]$User = "postgres",
-  [string]$Password = "postgres",
+  [string]$DbHost = "",
+  [int]$Port = 0,
+  [string]$User = "",
+  [string]$Password = "",
+  [string]$EnvFile = "",
   [string]$PgBin = "",
   # Mac dinh bo qua bang/index/constraint cua alembic_version, vi DB vua install
   # (create_all, chua stamp) khong co chung va khong phai la "schema lech".
@@ -28,12 +32,42 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$projectRoot = Split-Path -Parent $PSScriptRoot
 
 if ([string]::IsNullOrWhiteSpace($PgBin)) {
-  $PgBin = Join-Path (Split-Path -Parent $PSScriptRoot) "data\pg\pgsql\bin"
+  $PgBin = Join-Path $projectRoot "data\pg\pgsql\bin"
 }
 $psql = Join-Path $PgBin "psql.exe"
 if (-not (Test-Path $psql)) { throw "Khong thay psql.exe tai $psql (dung -PgBin de chi duong dan)" }
+
+if ([string]::IsNullOrWhiteSpace($EnvFile)) { $EnvFile = Join-Path $projectRoot ".env" }
+
+function Read-DbUrlFromEnv {
+  param([string]$Path)
+  if (-not (Test-Path $Path)) {
+    throw ".env not found at $Path - cannot read the DB credentials (fingerprint must not guess them)"
+  }
+  $line = (Select-String -Path $Path -Pattern '^YF_DATABASE_URL=(.+)$' | Select-Object -First 1)
+  if (-not $line) { throw "YF_DATABASE_URL not found in $Path" }
+  $url = $line.Matches[0].Groups[1].Value.Trim()
+  $m = [regex]::Match($url, '^[^:]+://([^:@/]+):([^@]+)@([^:/]+):(\d+)/([^?]+)')
+  if (-not $m.Success) { throw "cannot parse connection params out of YF_DATABASE_URL" }
+  return @{
+    User     = [uri]::UnescapeDataString($m.Groups[1].Value)
+    Password = [uri]::UnescapeDataString($m.Groups[2].Value)
+    Host     = $m.Groups[3].Value
+    Port     = [int]$m.Groups[4].Value
+  }
+}
+
+$creds = $null
+if ([string]::IsNullOrWhiteSpace($User) -or [string]::IsNullOrWhiteSpace($Password)) {
+  $creds = Read-DbUrlFromEnv -Path $EnvFile
+}
+if ([string]::IsNullOrWhiteSpace($DbHost)) { $DbHost = if ($creds) { $creds.Host } else { "127.0.0.1" } }
+if ($Port -le 0) { $Port = if ($creds) { $creds.Port } else { 5433 } }
+if ([string]::IsNullOrWhiteSpace($User)) { $User = $creds.User }
+if ([string]::IsNullOrWhiteSpace($Password)) { $Password = $creds.Password }
 
 $env:PGPASSWORD = $Password
 
@@ -124,3 +158,5 @@ if (-not [string]::IsNullOrWhiteSpace($CompareTo)) {
     Write-Output "KET LUAN: schema LECH - khong duoc tin vao replay chain / install moi."
   }
 }
+
+Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
