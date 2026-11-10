@@ -21,6 +21,8 @@ os.environ.setdefault(
     "YF_DATABASE_URL",
     "postgresql+psycopg://yf_test:yf_test@127.0.0.1:5433/yelp_factory_test",
 )
+# Collapse human-like sleeps/idle/dwell during tests; scale is still verified by unit tests.
+os.environ.setdefault("YF_HUMAN_TIME_SCALE", "0.0")
 
 from core.config import Settings, load_settings  # noqa: E402
 from human.timing import session_length_seconds  # noqa: E402

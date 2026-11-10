@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
 import random
 from datetime import datetime, time
 
@@ -75,5 +77,30 @@ def empty_session(probability: float = 0.05) -> bool:
     return random.random() < probability
 
 
+def _human_time_scale() -> float:
+    """Multiplier applied to all human timing (sleep/idle/dwell).
+
+    Default 1.0 keeps the production cadence. 0.0 collapses waits during tests.
+    Read on every call so tests can override via environment without reloads.
+    """
+    raw = os.environ.get("YF_HUMAN_TIME_SCALE", "1.0")
+    try:
+        return float(raw)
+    except ValueError:
+        return 1.0
+
+
+def _scaled_delay(raw_seconds: float) -> float:
+    scale = _human_time_scale()
+    if scale <= 0.0:
+        return 0.0
+    return raw_seconds * scale
+
+
 async def idle(page, low: float = 0.8, high: float = 3.0) -> None:
-    await page.wait_for_timeout(int(random.uniform(low, high) * 1000))
+    await page.wait_for_timeout(int(_scaled_delay(random.uniform(low, high)) * 1000))
+
+
+async def sleep_s(seconds: float) -> None:
+    """Drop-in async sleep that respects YF_HUMAN_TIME_SCALE."""
+    await asyncio.sleep(_scaled_delay(seconds))

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -168,6 +168,15 @@ class Settings(BaseSettings):
     admin_port: int = 8787
     artifacts_dir: str = "artifacts"
     log_level: str = "INFO"
+    human_time_scale: float = 1.0  # 0.0 collapses sleeps in tests; 1.0 keeps production cadence
+
+    @field_validator("human_time_scale", mode="before")
+    @classmethod
+    def _validate_human_time_scale(cls, v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 1.0
 
     gpm: GPMConfig = Field(default_factory=GPMConfig)
     concurrency: ConcurrencyConfig = Field(default_factory=ConcurrencyConfig)
@@ -219,6 +228,8 @@ def load_settings(config_path: str | Path | None = None, env_file: str | Path | 
     settings = Settings(**raw, _env_file=str(env_file or DEFAULT_ENV))
     for field, value in _env_secrets().items():
         setattr(settings, field, value)
+    # Sync the env var used by human.timing so code that imports before conftest still respects scale.
+    os.environ.setdefault("YF_HUMAN_TIME_SCALE", str(settings.human_time_scale))
     if settings.gpm.mcp_token:
         os.environ.setdefault("YF_GPM__MCP_TOKEN", settings.gpm.mcp_token)
     return settings

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import random
 
+from human.timing import sleep_s
 from obs.log import get_logger
 
 log = get_logger("human.typing")
@@ -57,14 +57,14 @@ async def human_type(locator, text: str, *, typo_rate: float = TYPO_RATE) -> Non
         if random.random() < typo_rate and char.isalpha():
             wrong = _typo(char)
             await locator.type(wrong)
-            await asyncio.sleep(random.uniform(0.08, 0.22))
+            await sleep_s(random.uniform(0.08, 0.22))
             await locator.press("Backspace")
-            await asyncio.sleep(random.uniform(0.05, 0.15))
+            await sleep_s(random.uniform(0.05, 0.15))
         await locator.type(char)
-        await asyncio.sleep(random.uniform(MIN_DELAY_MS, MAX_DELAY_MS) / 1000)
+        await sleep_s(random.uniform(MIN_DELAY_MS, MAX_DELAY_MS) / 1000)
     # Blur so inline validation fires (form has to report its errors).
     await locator.evaluate("el => el.blur()")
-    await asyncio.sleep(random.uniform(0.15, 0.45))
+    await sleep_s(random.uniform(0.15, 0.45))
 
 
 async def set_value_native(locator, text: str) -> None:

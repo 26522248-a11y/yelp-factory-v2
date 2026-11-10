@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import random
+
+from human.timing import sleep_s
 
 
 async def scroll_page(page, *, steps: int | None = None, max_px: int = 2400) -> int:
@@ -15,8 +16,8 @@ async def scroll_page(page, *, steps: int | None = None, max_px: int = 2400) -> 
             break
         await page.mouse.wheel(0, delta)
         total += delta
-        await asyncio.sleep(random.uniform(0.35, 1.6))
+        await sleep_s(random.uniform(0.35, 1.6))
         if random.random() < 0.15:  # occasional scroll back up, like a human re-reading
             await page.mouse.wheel(0, -random.randint(40, 180))
-            await asyncio.sleep(random.uniform(0.2, 0.9))
+            await sleep_s(random.uniform(0.2, 0.9))
     return total
