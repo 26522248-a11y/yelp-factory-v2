@@ -12,7 +12,7 @@ signup_duration_seconds = Histogram(
 )
 step_failures_total = Counter("step_failures_total", "Step failures by code", ["code", "step"])
 active_profiles = Gauge("active_profiles", "GPM profiles currently open")
-proxy_health_ratio = Gauge("proxy_health_ratio", "Share of proxies with health=ok")
+proxy_health_ratio = Gauge("proxy_health_ratio", "Share of non-dead proxies in proxy_pool (status != dead); absent when pool empty")
 selector_miss_total = Counter("selector_miss_total", "Selector registry misses", ["key"])
 queue_depth = Gauge("queue_depth", "Pending jobs in the queue")
 warming_actions_total = Counter("warming_actions_total", "Warming actions executed", ["kind", "phase"])

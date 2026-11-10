@@ -14,6 +14,7 @@ from core.importers import ParsedEmail, ParsedProxy
 from db.models import Account, EmailPool, ProxyPool
 from db.session import session_scope
 from obs.log import get_logger
+from obs.metrics import proxy_health_ratio
 
 log = get_logger("pool")
 
@@ -216,6 +217,28 @@ def stats() -> dict:
         "available_emails": usable_emails,
         "available_proxies": int(usable_proxies or 0),
     }
+
+
+def refresh_proxy_health_gauge() -> float | None:
+    """Publish the share of non-dead proxies in ``proxy_pool`` (the gauge was never set).
+
+    Healthy = ``status`` is anything but ``dead``: ``available``/``used``/``reserved`` are
+    all still usable. The legacy ``proxies.health`` column is NOT the source -- it lives on
+    the deprecated ``proxies`` table only, ``proxy_pool`` has no such column.
+
+    Returns the ratio (0.0-1.0) or ``None`` when the table is empty, in which case the
+    gauge is left untouched instead of publishing a misleading 0.
+    """
+    with session_scope() as session:
+        total = session.scalar(select(func.count()).select_from(ProxyPool)) or 0
+        dead = session.scalar(
+            select(func.count()).select_from(ProxyPool).where(ProxyPool.status == "dead")
+        ) or 0
+    if not total:
+        return None
+    ratio = (total - dead) / total
+    proxy_health_ratio.set(ratio)
+    return ratio
 
 
 def assign_to_account(account_id: uuid.UUID, *, email_id: uuid.UUID | None, proxy_id: uuid.UUID | None) -> None:

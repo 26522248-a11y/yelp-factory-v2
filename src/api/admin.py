@@ -62,6 +62,16 @@ def create_app() -> FastAPI:
     def metrics():
         from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+        # active_profiles was imported but never set (permanent 0 on the dashboard).
+        active_profiles.set(governor.active)
+        # Same story for proxy_health_ratio: recompute on scrape. Best effort -- a DB
+        # hiccup must not turn /metrics into a 500, the last sample is better than nothing.
+        try:
+            from core.pool import refresh_proxy_health_gauge
+
+            refresh_proxy_health_gauge()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("proxy_health_gauge_refresh_failed", error=str(exc)[:150])
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # ------------------------------------------------------------------ pools (spec v1.1)

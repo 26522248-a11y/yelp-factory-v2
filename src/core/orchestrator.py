@@ -19,7 +19,7 @@ from db.session import session_scope
 from flows.pools import build_persona
 from flows.signup import SignupFlow
 from obs.log import bind_context, get_logger
-from obs.metrics import signup_total
+from obs.metrics import signup_duration_seconds, signup_total
 
 log = get_logger("orchestrator")
 
@@ -105,8 +105,13 @@ def create_account(
 
 def quarantine(account_id: uuid.UUID, code: str, evidence: dict | None = None) -> None:
     with session_scope() as session:
-        session.add(Quarantine(account_id=account_id, code=code, evidence=evidence or {}))
         account = session.get(Account, account_id)
+        if account is None:
+            # quarantine.account_id is a FK to accounts: inserting for a row that no longer
+            # exists raises IntegrityError and masks the error we were called to record.
+            log.warning("quarantine_skipped_account_missing", account_id=str(account_id), code=code)
+            return
+        session.add(Quarantine(account_id=account_id, code=code, evidence=evidence or {}))
         if account is not None:
             account.state = AccountState.QUARANTINED.value
             account.substate = code
@@ -122,6 +127,10 @@ async def run_signup(account_id: uuid.UUID, deps: SignupDeps, *, raw_proxy: str 
         log.warning("account_locked", account_id=str(account_id))
         return AccountState.NEW
     lock.start_heartbeat()
+    # signup_duration_seconds was declared in obs/metrics.py but never observed, so /metrics
+    # reported a permanent 0 for it. Measured from the moment this worker owns the account
+    # (lock taken) to the final state, i.e. the real browser start -> ACTIVE wall time.
+    started_monotonic = time.monotonic()
     run_id: uuid.UUID | None = None
     try:
         run_id = open_run(account_id, kind="signup")
@@ -180,6 +189,7 @@ async def run_signup(account_id: uuid.UUID, deps: SignupDeps, *, raw_proxy: str 
 
             close_run(run_id, RunState.DONE if final == AccountState.ACTIVE else RunState.FAILED,)
             signup_total.labels(result=final.value.lower()).inc()
+            signup_duration_seconds.observe(time.monotonic() - started_monotonic)
             return final
     except YFError as exc:
         code = getattr(exc, "code", "error")

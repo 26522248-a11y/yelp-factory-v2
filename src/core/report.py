@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from db.models import Account, Event, Quarantine, Run, RunState
 from db.session import session_scope
+from obs.metrics import queue_depth as queue_depth_gauge
 
 
 def parse_window(value: str) -> datetime:
@@ -42,6 +43,8 @@ def build_report(since: str = "24h") -> dict:
             select(func.count()).select_from(Run).where(Run.state == RunState.PENDING.value)
         ).scalar_one()
 
+    # The gauge existed but was never set, so /metrics always reported 0 pending jobs.
+    queue_depth_gauge.set(int(queue_depth))
     return {
         "since": since,
         "accounts": accounts,
