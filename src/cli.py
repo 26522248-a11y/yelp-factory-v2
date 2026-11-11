@@ -44,7 +44,12 @@ def _deps(settings):
                 timeout_s=settings.sms.timeout_s,
             )
         else:
-            sms_provider = SmsActivateProvider(settings.sms.api_key, country=settings.sms.country)
+            sms_provider = SmsActivateProvider(
+                settings.sms.api_key,
+                country=settings.sms.country,
+                base_url=settings.sms.base_url or "https://api.sms-activate.org/stubs/handler_api.php",
+                service_code=settings.sms.service_code,
+            )
     return SignupDeps(
         settings=settings, gpm=gpm, registry=registry, email=email_provider, captcha=captcha, sms=sms_provider
     )

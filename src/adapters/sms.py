@@ -38,19 +38,35 @@ class SmsProvider(Protocol):
 class SmsActivateProvider:
     name = "smsapi"
 
-    def __init__(self, api_key: str, country: str = "US", client: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        api_key: str,
+        country: str = "US",
+        *,
+        base_url: str = SMS_API,
+        service_code: str = "yel",
+        client: httpx.AsyncClient | None = None,
+    ):
         self.api_key = api_key
         self.country = country
+        self.base_url = base_url or SMS_API
+        self.service_code = service_code or "yel"
         self._client = client or httpx.AsyncClient(timeout=30)
 
     async def _call(self, params: dict) -> str:
         merged = {"api_key": self.api_key, **params}
-        response = await self._client.get(SMS_API, params=merged)
+        response = await self._client.get(self.base_url, params=merged)
         response.raise_for_status()
         return response.text
 
+    async def balance(self) -> float:
+        text = await self._call({"action": "getBalance"})
+        if not text.startswith("ACCESS_BALANCE"):
+            raise SMSError(f"balance failed: {text}")
+        return float(text.split(":", 1)[1])
+
     async def acquire(self, *, area_code: str | None = None, max_price: float = 0.35) -> SmsSession:
-        params = {"action": "getNumber", "service": "yel", "country": self.country, "maxPrice": max_price}
+        params = {"action": "getNumber", "service": self.service_code, "country": self.country, "maxPrice": max_price}
         if area_code:
             params["operator"] = area_code
         text = await self._call(params)

@@ -89,6 +89,9 @@ class SMSConfig(BaseModel):
     api_key: str = ""
     # HupSMS service id (84 = Hotmail/Microsoft on Server 1; pick the target app's id).
     service_id: int = 84
+    # SMS-Activate-compatible handler API (default) or a compatible reseller such as 5totp.
+    base_url: str = ""
+    service_code: str = "yel"
     country: str = "US"
     max_price: float = 0.35
     timeout_s: int = 180

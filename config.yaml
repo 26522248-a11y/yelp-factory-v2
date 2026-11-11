@@ -27,11 +27,6 @@ email:
   imap_host: "outlook.office365.com"
   fakemailo_url: "https://fakemailo.com/partner-authorized-emails"
   fakemailo_service: "Yelp"
-sms:
-  provider: hup
-  service_id: 84
-  country: US
-  max_price: 0.35
 captcha:
   providers: [capsolver, 2captcha]
   timeout_s: 90
