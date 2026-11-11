@@ -153,6 +153,11 @@ Kỳ vọng: GPM OK, proxy US available > 0, task `Ready`.
 | `data\avatar_pool\` | pool ảnh |
 | `artifacts\avatar_<id>.jpg` | avatar từng acc |
 | `docs\STATE.md`, `docs\JOURNAL.md` | trạng thái & lịch sử |
+| `docs\ACCOUNT_LIFECYCLE_SOP.md` | SOP vòng đời acc (nhận → cổng kiểm tra → duy trì) |
+| `docs\ACCOUNT_TRACKING_K.md` | bảng theo dõi K (18 cột) + quy tắc chấm cổng |
+| `docs\templates\account_tracking_template.csv` | mẫu bảng K → copy ra `data\account_tracking.csv` |
+| `docs\templates\gate_check_template.csv` | mẫu chấm cổng G (6 điều kiện → hạng A/B/C) |
+| `docs\templates\weekly_kpi_template.csv` | mẫu KPI tuần (mục N) |
 | `.env` | secret — không đọc/in |
 
 ## 10. Khi nào hỏi người
@@ -161,3 +166,4 @@ Kỳ vọng: GPM OK, proxy US available > 0, task `Ready`.
 - Acc bị SUSPENDED/RESTRICTED
 - Cần xoá dữ liệu / đổi cấu hình lớn
 - Google Sheet lỗi quyền
+- Acc đủ 21 ngày cần chấm cổng G (`docs\ACCOUNT_TRACKING_K.md` mục 3)

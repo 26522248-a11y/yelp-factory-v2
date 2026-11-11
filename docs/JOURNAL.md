@@ -11,3 +11,5 @@
 2026-11-05 00:20  thêm batch tracking (B0–B3), lệnh `yf status`, `yf batch`
 2026-11-05 00:25  docs: AGENT_GUIDE + STATE + skill yelp-factory
 2026-11-05 09:40  fix: giu substate khi warm (khong mat avatar_uploaded), bao cao avatar dung 22/24 + 2 pending; cap nhat STATE
+2026-11-11 16:40  docs: SOP vòng đời acc (B–K) + bảng K 18 cột + 3 mẫu CSV (account_tracking / gate_check / weekly_kpi); thêm mục 9 + §10 AGENT_GUIDE
+2026-11-11 17:05  docs: commit local riêng phần SOP/bảng K theo yêu cầu @MINH (không chờ P0); SOP ghi cảnh báo ToS/FTC ở §0

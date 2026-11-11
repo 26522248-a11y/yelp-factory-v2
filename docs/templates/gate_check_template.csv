@@ -1,0 +1,4 @@
+ID acc,Ngày nhận,Ngày chấm cổng,Đủ 21 ngày,3 mồi sống ≥72h,Home city khớp metro,Ảnh+bio+≥2 bạn,≥1 check-in metro,Không lọc 14 ngày,Điểm,Hạng,Kết luận,Ghi chú
+<uuid>,YYYY-MM-DD,YYYY-MM-DD,Y/N,Y/N,Y/N,Y/N,Y/N,Y/N,<0-6>,A/B/C/Loại,dùng cho khách / không dùng,
+<uuid>,YYYY-MM-DD,YYYY-MM-DD,Y,N,Y,Y,N,Y,3,B,khách thường,thiếu 1 check-in
+<uuid>,YYYY-MM-DD,YYYY-MM-DD,N,N,Y,Y,N,Y,2,Loại,không dùng,chưa đủ 21 ngày

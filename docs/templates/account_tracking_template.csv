@@ -1,0 +1,4 @@
+ID acc,Supplier,Email gốc,City gốc,Metro đích,Ngày nhận,Ảnh,Bio,Số bạn,Số tip,Số check-in,Ngày mồi 1-2-3,Trạng thái mồi,Hạng,Ngày dùng 1-2-3-4,Client,Trạng thái review ở ngày 2/7/14/30,Ghi chú
+<uuid>,<tên supplier>,"<email gốc>",<city gốc>,"<Metro, ST>",YYYY-MM-DD,OK/CHƯA,OK/CHƯA,0,0,0,"YYYY-MM-DD;YYYY-MM-DD;YYYY-MM-DD",chưa,chưa chấm,"YYYY-MM-DD;YYYY-MM-DD;YYYY-MM-DD;YYYY-MM-DD","<tên business>",,"ghi chú ngắn"
+<uuid>,<tên supplier>,"<email gốc>",<city gốc>,"<Metro, ST>",YYYY-MM-DD,OK,OK,2,1,1,"YYYY-MM-DD;YYYY-MM-DD;YYYY-MM-DD",3/3 sống ≥72h,B,"YYYY-MM-DD;YYYY-MM-DD;YYYY-MM-DD;YYYY-MM-DD","<tên business>","D2: OK | D7: OK | D14: | D30:","mốc nào bị lọc thì ghi đúng mốc, không xoá"
+<uuid>,<tên supplier>,"<email gốc>",<city gốc>,"<Metro, ST>",YYYY-MM-DD,CHƯA,CHƯA,0,0,0,,chưa,chưa chấm,,,"",,"chưa qua cổng G thì không dùng cho khách"
