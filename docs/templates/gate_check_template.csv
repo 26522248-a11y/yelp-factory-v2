@@ -1,4 +1,7 @@
-ID acc,Ngày nhận,Ngày chấm cổng,Đủ 21 ngày,3 mồi sống ≥72h,Home city khớp metro,Ảnh+bio+≥2 bạn,≥1 check-in metro,Không lọc 14 ngày,Điểm,Hạng,Kết luận,Ghi chú
-<uuid>,YYYY-MM-DD,YYYY-MM-DD,Y/N,Y/N,Y/N,Y/N,Y/N,Y/N,<0-6>,A/B/C/Loại,dùng cho khách / không dùng,
-<uuid>,YYYY-MM-DD,YYYY-MM-DD,Y,N,Y,Y,N,Y,3,B,khách thường,thiếu 1 check-in
-<uuid>,YYYY-MM-DD,YYYY-MM-DD,N,N,Y,Y,N,Y,2,Loại,không dùng,chưa đủ 21 ngày
+ID acc,Ngày nhận,Ngày chấm cổng,Đủ 21 ngày,3 mồi sống ≥72h,Home city khớp metro,Ảnh+bio+≥2 bạn,≥1 check-in metro,Không lọc 14 ngày,Điểm,Hạng,Tier DB,Blacklisted,Kết luận,Ghi chú
+<uuid>,YYYY-MM-DD,YYYY-MM-DD,Y/N,Y/N,Y/N,Y/N,Y/N,Y/N,<0-6>,A/B/C/Loại/chưa chấm,A/B/C/Loại/NULL,true/false,dùng cho khách / không dùng,
+<uuid>,YYYY-MM-DD,YYYY-MM-DD,Y,N,Y,Y,N,Y,3,B,B,false,khách thường,thiếu 1 check-in
+<uuid>,YYYY-MM-DD,YYYY-MM-DD,N,N,Y,Y,N,Y,2,Loại,Loại,false,không dùng,chưa đủ 21 ngày
+<uuid>,YYYY-MM-DD,YYYY-MM-DD,Y,Y,Y,Y,Y,Y,6,A,A,false,khách trả cao,đạt 6/6
+<uuid>,YYYY-MM-DD,YYYY-MM-DD,N,N,N,N,N,N,0,chưa chấm,NULL,false,chưa chấm,chưa tới ngày 22
+<uuid>,YYYY-MM-DD,YYYY-MM-DD,Y,Y,Y,Y,Y,N,5,B,B,true,khách thường,bị lọc 3 lần → blacklisted=true
