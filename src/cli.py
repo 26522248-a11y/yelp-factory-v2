@@ -698,6 +698,25 @@ def cmd_resume(args) -> int:
     return 0 if state == __import__("db.models", fromlist=["AccountState"]).AccountState.ACTIVE else 1
 
 
+def cmd_adopt(args) -> int:
+    """yf adopt: import already-warmed accounts without touching their profiles."""
+    from core.adopt import adopt_accounts
+
+    gpm = None
+    try:
+        if not args.dry_run:
+            gpm = _deps(get_settings()).gpm
+        payload = adopt_accounts(args.file, gpm=gpm, dry_run=args.dry_run, batch=args.batch)
+    except (OSError, ValueError) as exc:
+        _print({"error": "adopt_failed", "detail": str(exc)[:300]})
+        return 1
+    finally:
+        if gpm is not None:
+            gpm.close()
+    _print(payload)
+    return 0 if not payload.get("invalid") and not payload.get("batch_error") else 1
+
+
 def cmd_import_emails(args) -> int:
     from core.importers import parse_emails, read_file
     from core.pool import import_emails
@@ -1129,6 +1148,12 @@ def build_parser() -> argparse.ArgumentParser:
     import_proxies.add_argument("--file", required=True)
     import_proxies.add_argument("--dry-run", action="store_true")
     import_proxies.set_defaults(func=cmd_import_proxies)
+
+    adopt = sub.add_parser("adopt", help="import warmed accounts into the lifecycle (no profile edits)")
+    adopt.add_argument("--file", required=True, help="CSV: email,password,supplier,home_city,metro,proxy[,...]")
+    adopt.add_argument("--batch", default=None, help="existing batch name to attach the accounts to")
+    adopt.add_argument("--dry-run", action="store_true", help="validate the file and metro lookups without writing")
+    adopt.set_defaults(func=cmd_adopt)
 
     pool = sub.add_parser("pool", help="email/proxy pool statistics")
     pool.add_argument("--list", action="store_true")

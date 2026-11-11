@@ -9,6 +9,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -195,6 +196,17 @@ class Account(Base):
         # install paths emit the same schema.
         Index("ix_accounts_batch_id", "batch_id"),
         Index("ix_accounts_metro", "metro_id"),
+        # Lifecycle tracking (0013): the K table and the 6-condition gate read these live.
+        Index("ix_accounts_supplier", "supplier"),
+        Index("ix_accounts_tier", "tier"),
+        Index("ix_accounts_blacklisted", "blacklisted"),
+        CheckConstraint("use_count BETWEEN 0 AND 4", name="ck_accounts_use_count_range"),
+        CheckConstraint(
+            "friend_count >= 0 AND tip_count >= 0 AND checkin_count >= 0",
+            name="ck_accounts_counts_non_negative",
+        ),
+        CheckConstraint("tier IS NULL OR tier IN ('A', 'B', 'C', 'Loại')", name="ck_accounts_tier_enum"),
+        CheckConstraint("home_city IS NULL OR btrim(home_city) <> ''", name="ck_accounts_home_city_not_blank"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_uuid)
@@ -233,6 +245,27 @@ class Account(Base):
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     quarantine_reason: Mapped[str | None] = mapped_column(String(64))
+    # --- Account lifecycle (spec B-K, 2026-11-11) -------------------------------------
+    # supplier = where the bought account came from; home_city is the ORIGINAL city and
+    # stays separate from metro_id (the client's target metro the account must move to).
+    supplier: Mapped[str | None] = mapped_column(String(64))
+    home_city: Mapped[str | None] = mapped_column(String(160))
+    # Set when the city is moved to the target metro; reviews are locked for 48h after it.
+    city_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    adopted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Lifecycle counters: max 4 client uses, tier is the gate result, counts feed the gate.
+    use_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # NULL = not scored yet; 'Loại' = failed the gate (blacklisted is the permanent drop).
+    tier: Mapped[str | None] = mapped_column(String(8))
+    friend_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tip_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    checkin_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # 3 seed reviews, spaced 2-4 days; the timestamps prove the >=72h survival window.
+    seed_review_1_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    seed_review_2_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    seed_review_3_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_filtered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blacklisted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     profile: Mapped[Profile | None] = relationship()
 

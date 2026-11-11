@@ -1078,6 +1078,13 @@ async def run_due_reviews(deps: SignupDeps, *, limit: int = 5) -> dict:
             if account is None:
                 mark_failed(assignment_id, "account_missing")
                 continue
+            # Lifecycle lock: city just changed (<48h), failed the gate, or blacklisted.
+            from core.lifecycle import review_block_reason
+
+            blocked = review_block_reason(account)
+            if blocked:
+                results.append({"assignment": str(assignment_id), "skipped": blocked})
+                continue
             with session_scope() as session:
                 profile_row = session.query(Profile).filter(Profile.id == account.profile_id).one_or_none() if account.profile_id else None
                 gpm_profile_id = profile_row.gpm_profile_id if profile_row else None
