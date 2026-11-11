@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from adapters.base import GPMError, GPMSchemaDrift, ProfileDTO
+from adapters.base import GPMError, GPMSchemaDrift, ProfileDTO, StartResult
 from adapters.gpm_http import GPMHttpClient
 from adapters.gpm_mcp import HybridGPM, MCPClient
 
@@ -55,6 +55,34 @@ async def test_hybrid_list_profiles_rejects_non_list_payload():
 
     with pytest.raises(GPMSchemaDrift):
         gpm.list_profiles()
+
+
+async def test_hybrid_start_profile_keeps_http_fallback_start_result():
+    """Fallback already returns StartResult; do not treat it as a raw dict and raise drift."""
+    def handler(request):
+        if request.url.path == "/api/v1/profiles/start/p1":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "data": {
+                        "profile_id": "p1",
+                        "driver_path": "C:\\gpm\\gpmdriver.exe",
+                        "remote_debugging_port": 52343,
+                        "addition_info": {"process_id": 8284},
+                    },
+                    "message": "",
+                },
+            )
+        raise AssertionError(f"unexpected request {request.url}")
+
+    gpm = HybridGPM(mcp_url="", http_client=http_client(handler))
+    result = gpm.start_profile("p1")
+
+    assert isinstance(result, StartResult)
+    assert result.remote_debugging_port == 52343
+    assert result.process_id == 8284
+    assert gpm.last_transport == "http"
 
 
 async def test_mcp_rpc_error_string_keeps_message():

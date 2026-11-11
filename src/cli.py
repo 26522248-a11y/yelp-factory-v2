@@ -1111,6 +1111,9 @@ def cmd_proxy_probe(args) -> int:
 
     settings = get_settings()
     raw = args.raw or settings.proxy.default_raw
+    if not raw:
+        _print({"error": "proxy_required", "hint": "pass --raw host:port:user:pass or configure proxy.default_raw"})
+        return 2
     result = asyncio.run(probe(ProxyTarget(raw=raw, country=settings.target.country), timeout_s=settings.proxy.probe_timeout_s))
     from dataclasses import asdict
 

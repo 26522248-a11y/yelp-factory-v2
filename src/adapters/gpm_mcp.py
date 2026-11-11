@@ -208,6 +208,9 @@ class HybridGPM:
             self._http.start_profile,
             {"profile_id": profile_id, **kwargs},
         )
+        if isinstance(data, StartResult):
+            # The HTTP fallback already returns a DTO; do not re-parse it as a raw dict.
+            return data
         if isinstance(data, dict) and "remote_debugging_port" in data:
             info = data.get("addition_info") or {}
             return StartResult(
