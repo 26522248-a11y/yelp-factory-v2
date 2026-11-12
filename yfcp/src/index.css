@@ -1,0 +1,213 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dark by default — operator console */
+    --background: 222 33% 5%;
+    --foreground: 213 26% 92%;
+
+    --card: 222 30% 8%;
+    --card-foreground: 213 26% 92%;
+
+    --popover: 222 31% 9%;
+    --popover-foreground: 213 26% 92%;
+
+    --primary: 221 83% 60%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 222 24% 13%;
+    --secondary-foreground: 213 20% 85%;
+
+    --muted: 222 24% 12%;
+    --muted-foreground: 215 16% 56%;
+
+    --accent: 222 26% 15%;
+    --accent-foreground: 213 20% 92%;
+
+    --destructive: 0 72% 54%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 62% 44%;
+    --warning: 38 92% 52%;
+    --info: 199 89% 52%;
+
+    --border: 222 22% 16%;
+    --input: 222 22% 16%;
+    --ring: 221 83% 60%;
+
+    --sidebar: 222 34% 6%;
+    --sidebar-foreground: 214 18% 72%;
+    --sidebar-accent: 222 26% 12%;
+    --sidebar-border: 222 22% 13%;
+
+    --radius: 0.6rem;
+  }
+
+  .light {
+    --background: 210 30% 97%;
+    --foreground: 222 30% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 30% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 30% 12%;
+
+    --primary: 221 83% 52%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 214 24% 92%;
+    --secondary-foreground: 222 26% 20%;
+
+    --muted: 214 24% 93%;
+    --muted-foreground: 215 16% 42%;
+
+    --accent: 214 26% 90%;
+    --accent-foreground: 222 26% 18%;
+
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 60% 36%;
+    --warning: 32 92% 44%;
+    --info: 199 89% 44%;
+
+    --border: 214 20% 86%;
+    --input: 214 20% 86%;
+    --ring: 221 83% 52%;
+
+    --sidebar: 214 28% 94%;
+    --sidebar-foreground: 222 20% 30%;
+    --sidebar-accent: 214 26% 89%;
+    --sidebar-border: 214 20% 86%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.35);
+  }
+}
+
+@layer components {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .panel {
+    @apply rounded-lg border border-border bg-card shadow-panel;
+  }
+
+  .grid-dots {
+    background-image: radial-gradient(hsl(var(--border) / 0.55) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+
+  .text-gradient {
+    background: linear-gradient(100deg, hsl(var(--foreground)) 10%, hsl(var(--primary)) 95%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Native-feeling drag region for the Tauri titlebar */
+  .drag-region {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}
+
+/* Tremor / Recharts dark surface harmonisation */
+.tremor-Card-root {
+  background-color: hsl(var(--card)) !important;
+  border-color: hsl(var(--border)) !important;
+}
+
+.recharts-cartesian-axis-tick text,
+.recharts-cartesian-axis-tick-value,
+.recharts-polar-angle-axis-tick text,
+.recharts-polar-radius-axis-tick text,
+.recharts-text {
+  fill: hsl(var(--muted-foreground)) !important;
+}
+
+.recharts-legend-item-text {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.recharts-default-tooltip {
+  background-color: hsl(var(--popover)) !important;
+  border-color: hsl(var(--border)) !important;
+  border-radius: 8px !important;
+  color: hsl(var(--popover-foreground)) !important;
+  font-size: 11px !important;
+}
+
+.recharts-tooltip-label,
+.recharts-tooltip-item {
+  color: hsl(var(--popover-foreground)) !important;
+}
+
+.recharts-cartesian-grid line {
+  stroke: hsl(var(--border) / 0.6) !important;
+}
+
+.recharts-curve.recharts-tooltip-cursor {
+  stroke: hsl(var(--border)) !important;
+}
+
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line {
+  stroke: hsl(var(--border)) !important;
+}
+
+/* Tremor ships its own palette classes; map them onto our theme tokens. */
+.fill-tremor-content,
+.fill-dark-tremor-content {
+  fill: hsl(var(--muted-foreground)) !important;
+}
+
+.text-tremor-content,
+.text-dark-tremor-content {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.text-tremor-content-strong,
+.text-dark-tremor-content-strong {
+  color: hsl(var(--foreground)) !important;
+}
