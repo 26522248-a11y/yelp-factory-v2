@@ -73,8 +73,11 @@ def _normalise(path: Path) -> Path:
         return path
 
 
-def _derive(source: Path) -> Path | None:
-    """Per-use transform: crop + flip + slight rotation, re-encoded as a new file."""
+def _derive(source: Path, *, gps_lat: float | None = None, gps_lon: float | None = None) -> Path | None:
+    """Per-use transform: crop + flip + slight rotation, re-encoded as a new file.
+
+    Batch 2: adds GPS EXIF tags when lat/lon provided (geo-tagged photos = trust signal).
+    """
     try:
         from PIL import Image, ImageEnhance
     except Exception:  # noqa: BLE001
@@ -98,12 +101,44 @@ def _derive(source: Path) -> Path | None:
         shot = datetime.now() - timedelta(days=random.randint(0, 30), minutes=random.randint(0, 600))
         exif[0x0132] = shot.strftime("%Y:%m:%d %H:%M:%S")
 
+        # batch 2: GPS EXIF (trust signal - geo-tagged photos)
+        if gps_lat is not None and gps_lon is not None:
+            gps_ifd = _build_gps_exif(gps_lat, gps_lon)
+            if gps_ifd:
+                exif[0x8825] = gps_ifd  # GPSInfo tag
+
         DERIVED_DIR.mkdir(parents=True, exist_ok=True)
         out = DERIVED_DIR / f"{uuid.uuid4().hex}.jpg"
         img.save(out, "JPEG", quality=random.randint(84, 92), exif=exif)
         return out
     except Exception as exc:  # noqa: BLE001
         log.warning("photo_derive_failed", source=str(source), error=str(exc)[:150])
+        return None
+
+
+def _build_gps_exif(lat: float, lon: float) -> dict | None:
+    """Build GPS EXIF IFD from lat/lon. Returns None if PIL cannot construct it."""
+    try:
+        from PIL.ExifTags import GPS
+
+        def _to_dms(decimal: float) -> tuple[int, int, float]:
+            d = int(abs(decimal))
+            m = int((abs(decimal) - d) * 60)
+            s = (abs(decimal) - d - m / 60) * 3600
+            return d, m, round(s, 4)
+
+        lat_ref = "N" if lat >= 0 else "S"
+        lon_ref = "E" if lon >= 0 else "W"
+        lat_dms = _to_dms(lat)
+        lon_dms = _to_dms(lon)
+
+        gps = {}
+        gps[GPS.GPSLatitudeRef] = lat_ref
+        gps[GPS.GPSLatitude] = lat_dms
+        gps[GPS.GPSLongitudeRef] = lon_ref
+        gps[GPS.GPSLongitude] = lon_dms
+        return gps
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -132,8 +167,18 @@ def _local_sources() -> list[Path]:
     return [p for p in POOL_DIR.glob("*") if p.suffix.lower() in {".jpg", ".jpeg", ".png"}]
 
 
-def pick_photo(keyword: str = "restaurant food", *, account_tag: str | None = None, fetch: bool = True) -> Path | None:
-    """Return a NEW derived photo path, never one already used by another account."""
+def pick_photo(
+    keyword: str = "restaurant food",
+    *,
+    account_tag: str | None = None,
+    fetch: bool = True,
+    gps_lat: float | None = None,
+    gps_lon: float | None = None,
+) -> Path | None:
+    """Return a NEW derived photo path, never one already used by another account.
+
+    Batch 2: gps_lat/gps_lon tags the derived photo with GPS EXIF (trust signal).
+    """
     POOL_DIR.mkdir(parents=True, exist_ok=True)
     usage = _load_usage()
 
@@ -162,7 +207,7 @@ def pick_photo(keyword: str = "restaurant food", *, account_tag: str | None = No
         usage[source.name].append(account_tag)
     _save_usage(usage)
 
-    derived = _derive(source)
+    derived = _derive(source, gps_lat=gps_lat, gps_lon=gps_lon)
     return derived or source
 
 

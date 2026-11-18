@@ -252,8 +252,11 @@ class PostReviewWarmRunner:
 
     def _choose(self, budget: dict[str, int]) -> str:
         weights = {
-            "pageview": 5, "search": 3, "scroll": 3, "save": 2, "vote": 2,
-            "follow": 1, "friend": 2, "photo": 1, "upload_photo": 2, "checkin": 1,
+            "pageview": 6, "search": 4, "scroll": 4, "save": 3, "vote": 3,
+            "follow": 2, "friend": 2, "photo": 2, "upload_photo": 3, "checkin": 2,
+            "browse_menu": 3, "browse_hot_new": 2, "browse_events": 2, "share": 2,
+            "react": 3, "ask_question": 2, "answer_question": 2,
+            "create_collection": 2, "add_to_collection": 3, "rsvp_event": 2, "filter_advanced": 2,
         }
         choices = [(kind, weight) for kind, weight in weights.items() if budget.get(kind, 0) > 0 and kind not in REVIEW_KINDS]
         if not choices:
@@ -313,9 +316,31 @@ class PostReviewWarmRunner:
                 return "photo"
             return "photo_miss"
         if kind == "upload_photo":
-            return await self._upload_photo(page, log, account_tag=account_tag)
+            return await self._upload_photo(page, log, account_tag=account_tag, city=city)
         if kind == "checkin":
             return await self._checkin(page, log, city=city)
+        if kind == "react":
+            return await self._react(page, log)
+        if kind == "ask_question":
+            return await self._ask_question(page, log)
+        if kind == "answer_question":
+            return await self._answer_question(page, log)
+        if kind == "create_collection":
+            return await self._create_collection(page, log)
+        if kind == "add_to_collection":
+            return await self._add_to_collection(page, log)
+        if kind == "share":
+            return await self._share(page, log)
+        if kind == "browse_menu":
+            return await self._browse_menu(page, log)
+        if kind == "browse_hot_new":
+            return await self._browse_hot_new(page, log, city=city)
+        if kind == "browse_events":
+            return await self._browse_events(page, log)
+        if kind == "rsvp_event":
+            return await self._rsvp_event(page, log)
+        if kind == "filter_advanced":
+            return await self._filter_advanced(page, log)
         return ""
 
     async def _pageview(self, page, log, *, city: str | None = None) -> str:
@@ -440,6 +465,217 @@ class PostReviewWarmRunner:
             log.warning("checkin_error", error=str(exc)[:150])
             return "checkin_error"
 
+    # ------------------------------------------------------------------ new actions
+
+    async def _react(self, page, log) -> str:
+        """React to a review: Helpful, Thanks, Love this, Oh no."""
+        reaction_keys = ["warmup.react_helpful", "warmup.react_thanks", "warmup.react_love", "warmup.react_ohno"]
+        key = random.choice(reaction_keys)
+        button = await self.registry.find(page, key, required=False, timeout_ms=2000)
+        if button is not None:
+            await human_click(page, button)
+            log("react", page.url, {"key": key})
+            return "react"
+        return "react_miss"
+
+    async def _ask_question(self, page, log) -> str:
+        """Ask a question in the Q&A section on a business page."""
+        trigger = await self.registry.find(page, "warmup.ask_question_trigger", required=False, timeout_ms=2500)
+        if trigger is None:
+            return "ask_question_miss"
+        await human_click(page, trigger, dwell=(200, 500))
+        await page.wait_for_timeout(random.randint(1_500, 3_000))
+        box = await self.registry.find(page, "warmup.ask_question_input", required=False, timeout_ms=2500)
+        if box is None:
+            return "ask_question_no_input"
+        questions = [
+            "Do they take reservations on weekends?",
+            "Is there parking nearby?",
+            "Are there vegan options?",
+            "What are the happy hour times?",
+            "Do they offer delivery?",
+        ]
+        await box.fill(random.choice(questions))
+        await page.wait_for_timeout(random.randint(1_000, 2_000))
+        submit = await self.registry.find(page, "warmup.ask_question_submit", required=False, timeout_ms=2000)
+        if submit is not None:
+            await human_click(page, submit, dwell=(200, 400))
+            await page.wait_for_timeout(random.randint(2_000, 4_000))
+        log("ask_question", page.url)
+        return "ask_question"
+
+    async def _answer_question(self, page, log) -> str:
+        """Answer someone's question in the Q&A section."""
+        answer_link = await self.registry.find(page, "warmup.answer_question_link", required=False, timeout_ms=2500)
+        if answer_link is None:
+            return "answer_question_miss"
+        await human_click(page, answer_link, dwell=(200, 500))
+        await page.wait_for_timeout(random.randint(1_500, 3_000))
+        box = await self.registry.find(page, "warmup.answer_question_input", required=False, timeout_ms=2500)
+        if box is None:
+            return "answer_question_no_input"
+        answers = [
+            "Yes, they do take reservations, I called ahead last time.",
+            "There's a parking garage across the street, pretty reasonable.",
+            "They have a few vegan dishes, the salads are great.",
+            "Happy hour is usually 3-6pm on weekdays.",
+            "Yes, they deliver through their own app and third-party services.",
+        ]
+        await box.fill(random.choice(answers))
+        await page.wait_for_timeout(random.randint(1_000, 2_000))
+        submit = await self.registry.find(page, "warmup.answer_question_submit", required=False, timeout_ms=2000)
+        if submit is not None:
+            await human_click(page, submit, dwell=(200, 400))
+            await page.wait_for_timeout(random.randint(2_000, 4_000))
+        log("answer_question", page.url)
+        return "answer_question"
+
+    async def _create_collection(self, page, log) -> str:
+        """Create a new collection (business bookmark folder)."""
+        trigger = await self.registry.find(page, "warmup.create_collection_trigger", required=False, timeout_ms=2500)
+        if trigger is None:
+            return "create_collection_miss"
+        await human_click(page, trigger, dwell=(200, 500))
+        await page.wait_for_timeout(random.randint(1_500, 3_000))
+        box = await self.registry.find(page, "warmup.create_collection_name", required=False, timeout_ms=2500)
+        if box is None:
+            return "create_collection_no_input"
+        collection_names = [
+            "Weekend Brunch Spots",
+            "Date Night Places",
+            "Quick Lunch Ideas",
+            "Coffee Shops to Try",
+            "Places for Groups",
+        ]
+        await box.fill(random.choice(collection_names))
+        await page.wait_for_timeout(random.randint(1_000, 2_000))
+        submit = await self.registry.find(page, "warmup.create_collection_submit", required=False, timeout_ms=2000)
+        if submit is not None:
+            await human_click(page, submit, dwell=(200, 400))
+            await page.wait_for_timeout(random.randint(2_000, 4_000))
+        log("create_collection", page.url)
+        return "create_collection"
+
+    async def _add_to_collection(self, page, log) -> str:
+        """Add current business to an existing collection."""
+        button = await self.registry.find(page, "warmup.save_to_collection", required=False, timeout_ms=2500)
+        if button is None:
+            return "add_to_collection_miss"
+        await human_click(page, button, dwell=(200, 500))
+        await page.wait_for_timeout(random.randint(1_500, 3_000))
+        collection_option = await self.registry.find(page, "warmup.collection_option", required=False, timeout_ms=2000)
+        if collection_option is not None:
+            await human_click(page, collection_option, dwell=(150, 350))
+            await page.wait_for_timeout(random.randint(1_000, 2_000))
+        confirm = await self.registry.find(page, "warmup.collection_confirm", required=False, timeout_ms=2000)
+        if confirm is not None:
+            await human_click(page, confirm, dwell=(200, 400))
+            await page.wait_for_timeout(random.randint(1_500, 3_000))
+        log("add_to_collection", page.url)
+        return "add_to_collection"
+
+    async def _share(self, page, log) -> str:
+        """Share the current page (copy link)."""
+        share_button = await self.registry.find(page, "warmup.share_button", required=False, timeout_ms=2500)
+        if share_button is None:
+            return "share_miss"
+        await human_click(page, share_button, dwell=(200, 500))
+        await page.wait_for_timeout(random.randint(1_500, 2_500))
+        copy_link = await self.registry.find(page, "warmup.share_copy_link", required=False, timeout_ms=2000)
+        if copy_link is not None:
+            await human_click(page, copy_link, dwell=(150, 350))
+            await page.wait_for_timeout(random.randint(1_000, 2_000))
+        log("share", page.url)
+        return "share"
+
+    async def _browse_menu(self, page, log) -> str:
+        """View the menu tab on a business page."""
+        menu_tab = await self.registry.find(page, "warmup.menu_tab", required=False, timeout_ms=2500)
+        if menu_tab is None:
+            return "browse_menu_miss"
+        await human_click(page, menu_tab, dwell=(200, 500))
+        await page.wait_for_timeout(random.randint(self.dwell_s[0] * 1000, self.dwell_s[1] * 1000))
+        await self._scroll(page, log, quiet=True)
+        log("browse_menu", page.url)
+        return "browse_menu"
+
+    async def _browse_hot_new(self, page, log, *, city: str | None = None) -> str:
+        """Browse Hot & New Businesses section."""
+        try:
+            await page.goto(
+                f"https://www.yelp.com/hotandnew{self._city_param(city)}",
+                wait_until="domcontentloaded",
+                timeout=45_000,
+            )
+            await page.wait_for_timeout(random.randint(2_000, 5_000))
+            await self._scroll(page, log, quiet=True)
+            link = await self.registry.find(page, "warmup.result_link", required=False, timeout_ms=3000)
+            if link is not None:
+                await human_click(page, link)
+                await page.wait_for_load_state("domcontentloaded", timeout=30_000)
+                await page.wait_for_timeout(random.randint(self.dwell_s[0] * 1000, self.dwell_s[1] * 1000))
+                try:
+                    await page.go_back()
+                except Exception:  # noqa: BLE001
+                    pass
+            log("browse_hot_new", page.url, {"city": city})
+            return "browse_hot_new"
+        except Exception as exc:  # noqa: BLE001
+            log.warning("browse_hot_new_error", error=str(exc)[:150])
+            return "browse_hot_new_error"
+
+    async def _browse_events(self, page, log) -> str:
+        """Browse Yelp Events page."""
+        try:
+            await page.goto("https://www.yelp.com/events", wait_until="domcontentloaded", timeout=45_000)
+            await page.wait_for_timeout(random.randint(2_000, 5_000))
+            await self._scroll(page, log, quiet=True)
+            log("browse_events", page.url)
+            return "browse_events"
+        except Exception as exc:  # noqa: BLE001
+            log.warning("browse_events_error", error=str(exc)[:150])
+            return "browse_events_error"
+
+    async def _rsvp_event(self, page, log) -> str:
+        """RSVP to a Yelp event."""
+        rsvp_button = await self.registry.find(page, "warmup.rsvp_button", required=False, timeout_ms=2500)
+        if rsvp_button is None:
+            return "rsvp_event_miss"
+        await human_click(page, rsvp_button, dwell=(200, 500))
+        await page.wait_for_timeout(random.randint(1_500, 3_000))
+        confirm = await self.registry.find(page, "warmup.rsvp_confirm", required=False, timeout_ms=2000)
+        if confirm is not None:
+            await human_click(page, confirm, dwell=(200, 400))
+            await page.wait_for_timeout(random.randint(2_000, 4_000))
+        log("rsvp_event", page.url)
+        return "rsvp_event"
+
+    async def _filter_advanced(self, page, log) -> str:
+        """Use advanced filters: Cash Back, Price, Distance, Open Now, Rating."""
+        if random.random() >= self.filter_probability:
+            return "filter_advanced_skipped"
+        try:
+            trigger = await self.registry.find(page, "warmup.filter_trigger", required=False, timeout_ms=2000)
+            if trigger is None:
+                return "filter_advanced_miss"
+            await human_click(page, trigger, dwell=(200, 500))
+            await page.wait_for_timeout(random.randint(800, 1_800))
+            filter_options = ["warmup.filter_cash_back", "warmup.filter_price", "warmup.filter_distance", "warmup.filter_rating"]
+            chosen = random.choice(filter_options)
+            option = await self.registry.find(page, chosen, required=False, timeout_ms=2000)
+            if option is not None:
+                await human_click(page, option, dwell=(150, 350))
+                await page.wait_for_timeout(random.randint(1_500, 3_000))
+            apply_btn = await self.registry.find(page, "warmup.filter_apply", required=False, timeout_ms=2000)
+            if apply_btn is not None:
+                await human_click(page, apply_btn, dwell=(200, 400))
+                await page.wait_for_timeout(random.randint(2_000, 4_000))
+            log("filter_advanced", page.url, {"filter": chosen})
+            return "filter_advanced"
+        except Exception as exc:  # noqa: BLE001
+            log.warning("filter_advanced_error", error=str(exc)[:150])
+            return "filter_advanced_error"
+
     async def _maybe_filter(self, page) -> None:
         """Sort/filter the result list - the most human action on a Yelp search page."""
         if random.random() >= self.filter_probability:
@@ -479,12 +715,23 @@ class PostReviewWarmRunner:
         except Exception:  # noqa: BLE001
             return False
 
-    async def _upload_photo(self, page, log, *, account_tag: str | None = None) -> str:
-        """P1b: upload one real-looking business photo (profile completeness = trust)."""
+    async def _upload_photo(self, page, log, *, account_tag: str | None = None, city: str | None = None) -> str:
+        """P1b: upload one real-looking business photo (profile completeness = trust).
+
+        Batch 2: photo is GPS-tagged with account's metro coordinates (trust signal).
+        """
         try:
             from core.photo_pool import pick_photo
 
-            photo = pick_photo("restaurant food", account_tag=account_tag)
+            # batch 2: GPS-tag the photo with the account's metro coordinates
+            gps_lat, gps_lon = None, None
+            if city:
+                base_lat, base_lon = self._geo_for(city)
+                # scatter 200-500m for realistic phone GPS accuracy
+                gps_lat = base_lat + random.uniform(-0.005, 0.005)
+                gps_lon = base_lon + random.uniform(-0.005, 0.005)
+
+            photo = pick_photo("restaurant food", account_tag=account_tag, gps_lat=gps_lat, gps_lon=gps_lon)
             if photo is None:
                 return "upload_photo_pool_empty"
 
@@ -501,7 +748,7 @@ class PostReviewWarmRunner:
             if submit is not None:
                 await human_click(page, submit, dwell=(200, 500))
                 await page.wait_for_timeout(random.randint(2_000, 5_000))
-            log("upload_photo", page.url, {"file": photo.name})
+            log("upload_photo", page.url, {"file": photo.name, "gps": f"{gps_lat:.4f},{gps_lon:.4f}" if gps_lat else None})
             return "upload_photo"
         except Exception as exc:  # noqa: BLE001
             log.warning("upload_photo_error", error=str(exc)[:150])

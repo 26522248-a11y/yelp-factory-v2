@@ -14,7 +14,7 @@ def test_deterministic_for_same_account():
     fp2 = for_account(account_id)
     assert fp1 == fp2
     assert fp1.window_size in WINDOW_SIZES
-    assert fp1.os_type == 1
+    assert fp1.os_type in (1, 2)  # batch 2: Windows=1 or macOS=2
     assert fp1.browser_type in (1, 2)
 
 

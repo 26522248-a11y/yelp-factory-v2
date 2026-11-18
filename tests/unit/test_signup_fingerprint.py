@@ -74,14 +74,14 @@ async def test_enter_provisioning_uses_fp1_and_persists_matrix(settings):
 
     assert result == {"profile_id": "p123"}
     assert ":fp1" in captured["operation_id"]
-    assert captured["create_kwargs"]["os_type"] == 1
+    assert captured["create_kwargs"]["os_type"] in (1, 2)  # batch 2: Windows or macOS
     assert captured["create_kwargs"]["browser_type"] in (1, 2)
     assert "browser_version" in captured["create_kwargs"]
 
     # _persist_profile wrote the 4 matrix fields into the DB row.
     add_call = session.add.call_args[0][0]
     fp = add_call.fingerprint_json
-    assert fp["os_type"] == 1
+    assert fp["os_type"] in (1, 2)  # batch 2: Windows or macOS
     assert fp["browser_type"] == captured["create_kwargs"]["browser_type"]
     assert fp["window_size"] in WINDOW_SIZES
     assert fp["browser_version"] == captured["create_kwargs"]["browser_version"]

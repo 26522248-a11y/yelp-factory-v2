@@ -25,11 +25,22 @@ PLAN_STATUS = "post_review"
 # core/budget.py PHASE_DEFAULTS with every review/photo-upload kind adjusted for
 # profile completeness (uploads and friends feed Yelp trust the same way reviews do).
 POST_REVIEW_BUDGET: list[tuple[str, dict[str, int]]] = [
-    ("P0", {"search": 4, "pageview": 8, "scroll": 20, "save": 0, "vote": 0, "follow": 0, "friend": 0, "photo": 0, "upload_photo": 0, "checkin": 0}),
-    # check-in moved to P1 (2026-11-09): it is the strongest geo signal and P4 often never runs
-    ("P1", {"search": 4, "pageview": 8, "scroll": 20, "save": 3, "vote": 0, "follow": 0, "friend": 0, "photo": 2, "upload_photo": 1, "checkin": 1}),
-    ("P2", {"search": 4, "pageview": 8, "scroll": 20, "save": 3, "vote": 5, "follow": 2, "friend": 1, "photo": 2, "upload_photo": 0, "checkin": 0}),
-    ("P4", {"search": 1, "pageview": 2, "scroll": 10, "save": 1, "vote": 1, "follow": 0, "friend": 0, "photo": 1, "upload_photo": 0, "checkin": 0}),
+    # P0: just browsing - conservative start
+    ("P0", {"search": 6, "pageview": 12, "scroll": 30, "save": 1, "vote": 1, "follow": 0, "friend": 0, "photo": 1, "upload_photo": 0, "checkin": 0,
+            "browse_menu": 2, "browse_hot_new": 1, "browse_events": 1, "share": 1,
+            "react": 1, "ask_question": 0, "answer_question": 0, "create_collection": 0, "add_to_collection": 1, "rsvp_event": 0, "filter_advanced": 2}),
+    # P1: active browsing + first contributions
+    ("P1", {"search": 8, "pageview": 15, "scroll": 40, "save": 5, "vote": 3, "follow": 1, "friend": 1, "photo": 4, "upload_photo": 2, "checkin": 2,
+            "browse_menu": 4, "browse_hot_new": 2, "browse_events": 2, "share": 2,
+            "react": 3, "ask_question": 1, "answer_question": 1, "create_collection": 1, "add_to_collection": 3, "rsvp_event": 1, "filter_advanced": 3}),
+    # P2: maximum engagement - high trust building
+    ("P2", {"search": 10, "pageview": 20, "scroll": 50, "save": 8, "vote": 10, "follow": 3, "friend": 2, "photo": 5, "upload_photo": 1, "checkin": 1,
+            "browse_menu": 5, "browse_hot_new": 3, "browse_events": 3, "share": 4,
+            "react": 8, "ask_question": 2, "answer_question": 3, "create_collection": 2, "add_to_collection": 5, "rsvp_event": 2, "filter_advanced": 5}),
+    # P4: sustained high activity - maintenance
+    ("P4", {"search": 6, "pageview": 12, "scroll": 30, "save": 4, "vote": 5, "follow": 2, "friend": 1, "photo": 3, "upload_photo": 1, "checkin": 1,
+            "browse_menu": 3, "browse_hot_new": 2, "browse_events": 2, "share": 3,
+            "react": 5, "ask_question": 1, "answer_question": 2, "create_collection": 1, "add_to_collection": 3, "rsvp_event": 1, "filter_advanced": 3}),
 ]
 
 REVIEW_KINDS = {"review"}  # never scheduled in this mode (spec 5.4)

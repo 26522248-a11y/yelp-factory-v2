@@ -1,8 +1,8 @@
-"""Deterministic per-account fingerprint matrix (anti-detect batch 1).
+"""Deterministic per-account fingerprint matrix (anti-detect batch 2).
 
-Keeps os_type=1 (Windows) until verified on real GPM hardware; rotates
-window_size and browser_type deterministically from account_id so the farm
-does not share one device signature.
+Rotates os_type (Windows/macOS), window_size and browser_type deterministically
+from account_id so the farm does not share one device signature. Batch 2 adds
+OS diversity (was hardcoded to Windows=1 in batch 1).
 """
 
 from __future__ import annotations
@@ -22,7 +22,12 @@ WINDOW_SIZES = [
     "1600,900",
     "1366,768",
     "1440,900",
+    "2560,1440",  # batch 2: high-res monitors
+    "1280,800",   # batch 2: common laptop
 ]
+
+# OS types: 1=Windows, 2=macOS (GPM values)
+OS_TYPES = [1, 1, 1, 2, 2]  # 60% Windows, 40% macOS (realistic US market share)
 
 
 @dataclass(frozen=True)
@@ -51,7 +56,7 @@ def _max_version(versions: list[str]) -> str:
 def for_account(
     account_id: uuid.UUID,
     *,
-    salt: str = "yf-fingerprint-v1",
+    salt: str = "yf-fingerprint-v2",  # batch 2: new salt to reshuffle all accounts
     versions_by_engine: Mapping[str, list[str]] | None = None,
 ) -> FingerprintSpec:
     """Return deterministic fingerprint values for one account.
@@ -59,9 +64,14 @@ def for_account(
     browser_type is bucketed Chrome/Firefox; Firefox is only chosen when the
     GPM install actually exposes firefox versions, otherwise we fall back to
     Chrome to avoid sending a Chrome version with browser_type=2.
+
+    Batch 2: os_type now rotates Windows/macOS (was hardcoded to 1).
     """
     versions_by_engine = versions_by_engine or {}
     window_size = WINDOW_SIZES[_bucket_index(account_id, salt, "window_size", len(WINDOW_SIZES))]
+
+    # batch 2: rotate OS type (Windows vs macOS)
+    os_type = OS_TYPES[_bucket_index(account_id, salt, "os_type", len(OS_TYPES))]
 
     # 0 = Chrome, 1 = Firefox in this local enum; map to GPM values after.
     browser_kind = _bucket_index(account_id, salt, "browser_kind", 5)
@@ -86,7 +96,7 @@ def for_account(
         browser_version = ""
 
     return FingerprintSpec(
-        os_type=1,  # Windows; do not rotate until verified on real GPM hardware
+        os_type=os_type,
         browser_type=browser_type,
         browser_version=browser_version,
         window_size=window_size,
