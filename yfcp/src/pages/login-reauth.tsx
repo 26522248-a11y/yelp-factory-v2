@@ -1,14 +1,13 @@
 import * as React from "react";
 import { DonutChart } from "@tremor/react";
-import { KeyRound, LockKeyhole, MailCheck, RefreshCcw, ShieldAlert, Smartphone } from "lucide-react";
+import { KeyRound, LockKeyhole, MailCheck, RefreshCcw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, SectionLabel, StatTile, EmptyState } from "@/components/shared/bits";
+import { PageHeader, SectionLabel, StatTile, EmptyState, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { accounts } from "@/lib/mock";
+import { useAccountsData } from "@/lib/hooks";
 import { timeAgo, cn } from "@/lib/utils";
 
 const challenges = [
@@ -28,6 +27,7 @@ const history = [
 ];
 
 export default function LoginReauth() {
+  const { data: accounts, source } = useAccountsData();
   const [busy, setBusy] = React.useState<string | null>(null);
   const suspects = accounts.filter((a) => a.state === "COOLDOWN" || a.state === "NEEDS_MANUAL").slice(0, 6);
 
@@ -38,14 +38,17 @@ export default function LoginReauth() {
         title="Login & re-authentication"
         description="Session health across the farm. Trigger a manual login, bulk re-auth expired sessions, and track which challenge Yelp is serving."
         actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              toast.success("Bulk re-auth queued for 6 accounts");
-            }}
-          >
-            <RefreshCcw /> Re-auth suspects
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button
+              size="sm"
+              onClick={() => {
+                toast.success("Bulk re-auth queued for 6 accounts");
+              }}
+            >
+              <RefreshCcw /> Re-auth suspects
+            </Button>
+          </>
         }
       />
 

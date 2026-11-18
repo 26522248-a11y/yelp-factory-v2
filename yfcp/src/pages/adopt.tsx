@@ -1,11 +1,11 @@
 import * as React from "react";
 import { CheckCircle2, CircleAlert, FileUp, Flame, Eye, ListChecks, Plus, Search, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, SectionLabel, ModeBadge, AccountStateBadge } from "@/components/shared/bits";
+import { PageHeader, SectionLabel, ModeBadge, AccountStateBadge, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox, Field, Input, Select, Switch } from "@/components/ui/form";
+import { Field, Input, Select, Switch } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -34,9 +34,12 @@ export default function Adopt() {
         title="Adopt accounts"
         description="Bring in identities that already exist in GPM. We bind the profile, attach a proxy and start the chosen nurture cadence — without touching the original fingerprint."
         actions={
-          <Button variant="outline" size="sm" onClick={() => toast.success("Template downloaded")}>
-            <FileUp /> Template
-          </Button>
+          <>
+            <SourceBadge source="mock" />
+            <Button variant="outline" size="sm" onClick={() => toast.success("Template downloaded")}>
+              <FileUp /> Template
+            </Button>
+          </>
         }
       />
 

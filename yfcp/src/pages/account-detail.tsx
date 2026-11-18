@@ -1,27 +1,22 @@
 import * as React from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
-  Ban,
-  Camera,
   Check,
   CircleDashed,
-  Clock3,
   Fingerprint,
   Play,
   RefreshCcw,
-  ShieldCheck,
-  UserCog,
 } from "lucide-react";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
 import { toast } from "sonner";
-import { PageHeader, AccountStateBadge, ModeBadge, TierBadge, Avatar, JsonViewer, SectionLabel } from "@/components/shared/bits";
+import { PageHeader, AccountStateBadge, ModeBadge, TierBadge, Avatar, JsonViewer, SectionLabel, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress, Separator } from "@/components/ui/form";
+import { Progress } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { accounts, reviews, warmingSessions, assignments, alerts } from "@/lib/mock";
+import { useAccountsData, useReviewsData, useWarmingSessionsData, useAssignmentsData } from "@/lib/hooks";
 import { cn, timeAgo } from "@/lib/utils";
 
 const SIGNUP_STAGES = [
@@ -42,6 +37,10 @@ const SIGNUP_STAGES = [
 ];
 
 export default function AccountDetail() {
+  const { data: accounts, source } = useAccountsData();
+  const { data: reviews } = useReviewsData();
+  const { data: warmingSessions } = useWarmingSessionsData();
+  const { data: assignments } = useAssignmentsData();
   const { id } = useParams();
   const navigate = useNavigate();
   const account = accounts.find((a) => a.id === id) ?? accounts[0];
@@ -55,12 +54,11 @@ export default function AccountDetail() {
     { component: "diversity", score: account.trust.diversity, cap: 18 },
     { component: "warm", score: account.trust.warm, cap: 30 },
     { component: "content", score: account.trust.content, cap: 20 },
-  ];
+  ].map((d) => ({ ...d, pct: Math.round((d.score / d.cap) * 100) }));
 
   const sessionRows = warmingSessions.filter((s) => s.accountEmail === account.email);
   const reviewRows = reviews.filter((r) => r.accountEmail === account.email);
   const dueRows = assignments.filter((a) => a.accountEmail === account.email);
-  const accountAlerts = alerts.filter((a) => a.accountEmail === account.email);
 
   return (
     <div className="space-y-4">
@@ -70,6 +68,7 @@ export default function AccountDetail() {
         description={`${account.email} · ${account.city}, ${account.state_code} · joined ${timeAgo(account.createdAt)}`}
         actions={
           <>
+            <SourceBadge source={source} />
             <Button variant="ghost" size="sm" onClick={() => navigate("/accounts")}>
               <ArrowLeft /> Back
             </Button>
@@ -160,14 +159,25 @@ export default function AccountDetail() {
               <CardTitle>Trust breakdown</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={240}>
-                <RadarChart data={radar} outerRadius="72%">
+              <ResponsiveContainer width="100%" height={300}>
+                <RadarChart data={radar} outerRadius="78%">
                   <PolarGrid stroke="hsl(var(--border))" />
                   <PolarAngleAxis dataKey="component" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                  <PolarRadiusAxis tick={false} axisLine={false} domain={[0, 30]} />
-                  <Radar dataKey="score" stroke="hsl(221 83% 60%)" fill="hsl(221 83% 60%)" fillOpacity={0.28} />
+                  <PolarRadiusAxis tick={false} axisLine={false} domain={[0, 100]} />
+                  <Radar dataKey="pct" stroke="hsl(221 83% 60%)" fill="hsl(221 83% 60%)" fillOpacity={0.3} />
                 </RadarChart>
               </ResponsiveContainer>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 pt-1 sm:grid-cols-3">
+                {radar.map((d) => (
+                  <div key={d.component} className="flex items-center justify-between gap-2 text-[10.5px]">
+                    <span className="text-muted-foreground">{d.component}</span>
+                    <span className="font-mono tabular-nums">
+                      {d.score}
+                      <span className="text-muted-foreground">/{d.cap}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
           <div className="space-y-3">

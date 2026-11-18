@@ -12,29 +12,44 @@ import {
   Users,
 } from "lucide-react";
 import { AreaChart, BarChart, DonutChart } from "@tremor/react";
-import { PageHeader, StatTile, HealthDot } from "@/components/shared/bits";
+import { PageHeader, StatTile, HealthDot, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/form";
-import { activity7d, alerts, accounts, reviewVelocity, runs, trustHistory } from "@/lib/mock";
+import { useAccountStateCounts, useActivity7dData, useAlertsData, useApiHealth, usePoolStats, useReviewVelocityData, useRunsData, useTrustHistoryData } from "@/lib/hooks";
 import { formatDuration, timeAgo } from "@/lib/utils";
 
-const stateCounts = accounts.reduce<Record<string, number>>((acc, a) => {
-  const key = ["ACTIVE", "READY"].includes(a.state)
-    ? "Healthy"
-    : ["WARMING", "NEW", "PROVISIONING", "FORM_FILLED", "SUBMITTED", "ONBOARDED"].includes(a.state)
-    ? "Warming"
-    : ["COOLDOWN", "NEEDS_MANUAL", "EMAIL_PENDING", "PHONE_PENDING"].includes(a.state)
-    ? "Attention"
-    : "Dead / banned";
-  acc[key] = (acc[key] ?? 0) + 1;
-  return acc;
-}, {});
+const STATE_GROUPS: Record<string, string[]> = {
+  Healthy: ["ACTIVE", "READY"],
+  Warming: ["WARMING", "NEW", "PROVISIONING", "PROXY_BOUND", "BROWSER_UP", "PREWARMED", "FORM_FILLED", "CAPTCHA_SOLVED", "SUBMITTED", "ONBOARDED"],
+  Attention: ["COOLDOWN", "NEEDS_MANUAL", "EMAIL_PENDING", "PHONE_PENDING"],
+};
 
-const donut = Object.entries(stateCounts).map(([name, value]) => ({ name, value }));
+function groupStates(counts: Record<string, number>) {
+  const grouped: Record<string, number> = { Healthy: 0, Warming: 0, Attention: 0, "Dead / banned": 0 };
+  for (const [state, value] of Object.entries(counts)) {
+    const group = Object.entries(STATE_GROUPS).find(([, states]) => states.includes(state))?.[0] ?? "Dead / banned";
+    grouped[group] += value;
+  }
+  return grouped;
+}
 
 export default function Dashboard() {
+  const { counts, total, report, source } = useAccountStateCounts();
+  const health = useApiHealth();
+  const pool = usePoolStats();
+  const { data: activity7d } = useActivity7dData();
+  const { data: trustHistory } = useTrustHistoryData();
+  const { data: alerts } = useAlertsData();
+  const { data: runs } = useRunsData();
+  const { data: reviewVelocity } = useReviewVelocityData();
+  const stateCounts = React.useMemo(() => groupStates(counts), [counts]);
+  const donut = React.useMemo(() => Object.entries(stateCounts).map(([name, value]) => ({ name, value })), [stateCounts]);
+  const activeNow = report ? counts.ACTIVE ?? 0 : stateCounts["Healthy"] ?? 0;
+  const apiOk = !!health.data && !health.isError;
+  const slots = apiOk ? health.data?.active_profiles ?? 0 : 0;
+
   const [, setLive] = React.useState(0);
   React.useEffect(() => {
     const t = setInterval(() => setLive((v) => v + 1), 5000);
@@ -49,6 +64,7 @@ export default function Dashboard() {
         description="Everything the factory is doing right now — signups, warming cadence, review throughput and the guardrails around them."
         actions={
           <>
+            <SourceBadge source={source} />
             <Button variant="outline" size="sm">
               <Clock3 /> Schedule review
             </Button>
@@ -60,12 +76,18 @@ export default function Dashboard() {
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Total accounts" value={accounts.length} hint="64 managed" icon={<Users className="h-4 w-4" />} />
-        <StatTile label="Active today" value={stateCounts["Healthy"] ?? 0} delta="+4" hint="vs. yesterday" tone="success" icon={<Activity className="h-4 w-4" />} />
+        <StatTile label="Total accounts" value={total} hint={report ? "engine report" : "64 managed"} icon={<Users className="h-4 w-4" />} />
+        <StatTile label="Active today" value={activeNow} delta="+4" hint="vs. yesterday" tone="success" icon={<Activity className="h-4 w-4" />} />
         <StatTile label="Reviews this week" value={reviewVelocity.reduce((s, d) => s + d.posted, 0)} hint="7-day posted" tone="info" icon={<BadgeCheck className="h-4 w-4" />} />
         <StatTile label="Avg trust" value={72} hint="gate at 75" tone="warning" icon={<ShieldCheck className="h-4 w-4" />} />
         <StatTile label="Filter rate" value="18%" delta="-3.1%" hint="7-day rolling" tone="success" icon={<Gauge className="h-4 w-4" />} />
-        <StatTile label="Browser slots" value="2 / 2" hint="saturated" tone="danger" icon={<Flame className="h-4 w-4" />} />
+        <StatTile
+          label="Browser slots"
+          value={`${slots} / ${Math.max(slots, 2)}`}
+          hint={apiOk ? (slots >= 2 ? "saturated" : "capacity free") : "engine offline"}
+          tone={apiOk && slots >= 2 ? "danger" : "success"}
+          icon={<Flame className="h-4 w-4" />}
+        />
       </div>
 
       <div className="grid gap-3 xl:grid-cols-3">
@@ -75,7 +97,7 @@ export default function Dashboard() {
               <CardTitle>Factory output — last 7 days</CardTitle>
               <p className="text-[11px] text-muted-foreground">Signups completed, warming sessions, reviews published</p>
             </div>
-            <Badge variant="success">live</Badge>
+            <Badge variant={source === "live" ? "success" : "muted"}>{source === "live" ? "live" : "sample"}</Badge>
           </CardHeader>
           <CardContent>
             <BarChart
@@ -83,7 +105,7 @@ export default function Dashboard() {
               index="day"
               categories={["signups", "sessions", "reviews"]}
               colors={["indigo", "sky", "emerald"]}
-              yAxisWidth={28}
+              yAxisWidth={40}
               showLegend
               showGridLines={false}
               className="h-56"
@@ -126,10 +148,10 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="space-y-2">
               {[
-                ["PostgreSQL", "127.0.0.1:5433", true],
-                ["GPM Login Global", ":9495 · v3.4.1", true],
-                ["Admin API", ":8787", true],
-                ["Playwright", "chromium 131", true],
+                ["PostgreSQL", "127.0.0.1:5433", apiOk && (health.data?.db ?? false)],
+                ["GPM Login Global", health.data?.gpm_transport ?? ":9495 · v3.4.1", apiOk],
+                ["Admin API", health.data ? "connected" : "offline · sample data", apiOk],
+                ["Proxy pool", health.data ? `${pool.stats.available_proxies} available` : "sample counts", pool.source === "live" && pool.stats.available_proxies > 0],
                 ["Internet", "egress OK", true],
               ].map(([label, detail, ok]) => (
                 <div key={label as string} className="flex items-center justify-between">
@@ -226,7 +248,7 @@ export default function Dashboard() {
               index="day"
               categories={["avg"]}
               colors={["indigo"]}
-              yAxisWidth={32}
+              yAxisWidth={40}
               showGridLines={false}
               showLegend={false}
               className="h-44"

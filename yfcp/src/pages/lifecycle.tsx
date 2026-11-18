@@ -1,16 +1,16 @@
 import * as React from "react";
-import { Ban, Clock3, Layers, ShieldOff, Unlock, Waypoints } from "lucide-react";
+import { Ban, Clock3, ShieldOff, Unlock, Waypoints } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel, TierBadge } from "@/components/shared/bits";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, StatTile, SectionLabel, TierBadge, SourceBadge } from "@/components/shared/bits";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input, Select } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { accounts } from "@/lib/mock";
-import { cn } from "@/lib/utils";
+import { useAccountsData } from "@/lib/hooks";
 
 export default function Lifecycle() {
+  const { data: accounts, source } = useAccountsData();
   const locked = accounts.filter((a) => a.cityLockUntil && new Date(a.cityLockUntil) > new Date());
   const blacklisted = accounts.filter((a) => a.blacklisted);
   const tiers = ["A", "B", "C", "Loai"] as const;
@@ -22,9 +22,12 @@ export default function Lifecycle() {
         title="Lifecycle"
         description="Rules that gate an account outside of trust: metro-change locks, tier definitions and the blacklist."
         actions={
-          <Button size="sm" onClick={() => toast.success("Lifecycle rules saved")}>
-            Save rules
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button size="sm" onClick={() => toast.success("Lifecycle rules saved")}>
+              Save rules
+            </Button>
+          </>
         }
       />
 

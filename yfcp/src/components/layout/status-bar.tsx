@@ -3,6 +3,8 @@ import { useUi } from "@/stores/ui";
 import { cn } from "@/lib/utils";
 import { Tooltip } from "@/components/ui/primitives";
 import { isTauri } from "@/lib/bridge";
+import { useApiConfig, useApiHealth } from "@/lib/hooks";
+import { timeAgo } from "@/lib/utils";
 
 function Item({
   ok,
@@ -28,14 +30,38 @@ function Item({
 
 export function StatusBar() {
   const { theme, toggleTheme } = useUi();
+  const health = useApiHealth();
+  const config = useApiConfig();
+  const apiOk = !!health.data && !health.isError;
+  const dbOk = apiOk && (health.data?.db ?? false);
+
   return (
     <footer className="flex h-6 shrink-0 items-center gap-4 border-t border-border bg-sidebar px-3">
-      <Item ok icon={<Database className="h-3 w-3" />} label="PG" detail="PostgreSQL — 127.0.0.1:5433 (4ms)" />
-      <Item ok icon={<MonitorSmartphone className="h-3 w-3" />} label="GPM" detail="GPM Login Global — :9495 (v3.4.1)" />
-      <Item ok icon={<Wifi className="h-3 w-3" />} label="API" detail="Admin API — 127.0.0.1:8787" />
-      <Item ok={false} icon={<Activity className="h-3 w-3" />} label="2/2 slots" detail="Browser slots saturated — 2 of 2 in use" />
+      <Item ok={dbOk} icon={<Database className="h-3 w-3" />} label="PG" detail={dbOk ? "PostgreSQL — 127.0.0.1:5433" : "PostgreSQL unreachable (detected via admin API)"} />
+      <Item ok={apiOk} icon={<MonitorSmartphone className="h-3 w-3" />} label="GPM" detail={apiOk ? `GPM — ${health.data?.gpm_transport ?? "127.0.0.1:9495"}` : "GPM transport unknown — engine offline"} />
+      <Item
+        ok={apiOk}
+        icon={<Wifi className="h-3 w-3" />}
+        label="API"
+        detail={
+          apiOk
+            ? `Admin API — ${config.data?.baseUrl ?? "127.0.0.1:8787"} · v${health.data?.version ?? "?"} · schema ${health.data?.schema_revision ?? "?"}`
+            : "Admin API offline — showing sample data"
+        }
+      />
+      <Item
+        ok={apiOk}
+        icon={<Activity className="h-3 w-3" />}
+        label={`${health.data?.active_profiles ?? 0} active`}
+        detail={`${health.data?.active_profiles ?? 0} browser profiles running`}
+      />
 
       <div className="ml-auto flex items-center gap-4">
+        {apiOk && (
+          <span className="hidden font-mono text-[10px] text-muted-foreground/70 lg:inline">
+            synced {health.dataUpdatedAt ? timeAgo(new Date(health.dataUpdatedAt)) : "now"}
+          </span>
+        )}
         <Item ok icon={<Cpu className="h-3 w-3" />} label="CPU 38%" detail="Intel Xeon Gold 6133 — 38% across 4 vCPU" />
         <Item ok icon={<HardDrive className="h-3 w-3" />} label="RAM 61%" detail="2.44 GB of 4.00 GB used — governor healthy" />
         <span className="font-mono text-[10px] text-muted-foreground/70">worker 3/5</span>

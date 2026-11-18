@@ -180,9 +180,35 @@ class BrowserSlot(Base):
 
     token: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_uuid)
     worker_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    node_id: Mapped[str | None] = mapped_column(String(120))
     purpose: Mapped[str] = mapped_column(String(32), default="warm", nullable=False)
     heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     ttl_seconds: Mapped[int] = mapped_column(Integer, default=7200, nullable=False)
+
+
+class Node(Base):
+    """A machine participating in the deployment (console or worker).
+
+    Consoles and workers POST a heartbeat every 30s; the console treats a node as
+    offline after 120s. The table is deployment metadata only — no job routing
+    depends on it yet.
+    """
+
+    __tablename__ = "nodes"
+    __table_args__ = (Index("ix_nodes_last_seen", "last_seen"),)
+
+    id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    hostname: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    role: Mapped[str] = mapped_column(String(32), default="console", nullable=False)
+    version: Mapped[str | None] = mapped_column(String(64))
+    capacity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="online", nullable=False)
+    meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Account(Base):
@@ -280,12 +306,14 @@ class Run(Base):
             unique=True,
             postgresql_where=text("state = 'RUNNING'"),
         ),
+        Index("ix_runs_node", "node_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_uuid)
     account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), default="signup", nullable=False)
     state: Mapped[str] = mapped_column(String(32), default=RunState.PENDING.value, nullable=False)
+    node_id: Mapped[str | None] = mapped_column(String(120))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     worker_id: Mapped[str | None] = mapped_column(String(120))

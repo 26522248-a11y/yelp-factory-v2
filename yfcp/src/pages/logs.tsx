@@ -1,23 +1,15 @@
 import * as React from "react";
 import { Download, Pause, Play, Search, Terminal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input, Select, Switch } from "@/components/ui/form";
+import { eventToLine, useEngineEvents, type LogLine as Line } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
-type Level = "INFO" | "WARN" | "ERROR" | "DEBUG";
-interface Line {
-  id: number;
-  ts: string;
-  level: Level;
-  account: string;
-  msg: string;
-}
-
 const ACCOUNTS = ["marcus.reed41@outlook.com", "nina.patel88@hotmail.com", "sofia.novak9@outlook.com", "owen.doyle7@live.com"];
-const TEMPLATES: { level: Level; msg: string }[] = [
+const TEMPLATES: { level: Line["level"]; msg: string }[] = [
   { level: "INFO", msg: "warming session started — mode=post_review plan={plan_id}" },
   { level: "INFO", msg: "action=search q=\"bbq near me\" results=18" },
   { level: "INFO", msg: "action=pageview url=/biz/bluebonnet-grill-austin dwell=42s" },
@@ -34,7 +26,7 @@ let seq = 1;
 function makeLine(): Line {
   const t = TEMPLATES[Math.floor(Math.random() * TEMPLATES.length)];
   return {
-    id: seq++,
+    id: `local-${seq++}`,
     ts: new Date().toISOString(),
     level: t.level,
     account: ACCOUNTS[Math.floor(Math.random() * ACCOUNTS.length)],
@@ -43,18 +35,23 @@ function makeLine(): Line {
 }
 
 export default function Logs() {
-  const [lines, setLines] = React.useState<Line[]>(() => Array.from({ length: 40 }).map(makeLine));
+  const [synthetic, setSynthetic] = React.useState<Line[]>(() => Array.from({ length: 40 }).map(makeLine));
   const [live, setLive] = React.useState(true);
   const [level, setLevel] = React.useState("all");
   const [q, setQ] = React.useState("");
   const [autoscroll, setAutoscroll] = React.useState(true);
   const boxRef = React.useRef<HTMLDivElement>(null);
 
+  const engineEvents = useEngineEvents(400, { enabled: live });
+  const engineLines = React.useMemo(() => (engineEvents.data ?? []).map(eventToLine), [engineEvents.data]);
+  const usingEngine = engineLines.length > 0;
+  const lines = usingEngine ? engineLines : synthetic;
+
   React.useEffect(() => {
-    if (!live) return;
-    const t = setInterval(() => setLines((prev) => [...prev.slice(-400), makeLine()]), 1400);
+    if (!live || usingEngine) return;
+    const t = setInterval(() => setSynthetic((prev) => [...prev.slice(-400), makeLine()]), 1400);
     return () => clearInterval(t);
-  }, [live]);
+  }, [live, usingEngine]);
 
   React.useEffect(() => {
     if (autoscroll && boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight;
@@ -72,7 +69,8 @@ export default function Logs() {
         description="Structured log stream from every worker. Filter by level or account, follow live, or export the slice you need."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => { setLines([]); toast.success("Buffer cleared"); }}>
+            <SourceBadge source={usingEngine ? "live" : "mock"} />
+            <Button variant="outline" size="sm" onClick={() => { setSynthetic([]); toast.success("Buffer cleared"); }}>
               <Trash2 /> Clear
             </Button>
             <Button variant="outline" size="sm" onClick={() => toast.success("Filtered logs exported")}>
@@ -89,7 +87,7 @@ export default function Logs() {
         <StatTile label="Lines buffered" value={lines.length} icon={<Terminal className="h-4 w-4" />} />
         <StatTile label="Errors" value={lines.filter((l) => l.level === "ERROR").length} tone="danger" />
         <StatTile label="Warnings" value={lines.filter((l) => l.level === "WARN").length} tone="warning" />
-        <StatTile label="Stream" value={live ? "live" : "paused"} tone={live ? "success" : "warning"} />
+        <StatTile label="Stream" value={live ? (usingEngine ? "engine" : "sample") : "paused"} tone={live ? "success" : "warning"} />
       </div>
 
       <div className="panel overflow-hidden">

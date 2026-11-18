@@ -2,7 +2,7 @@ import * as React from "react";
 import { AreaChart } from "@tremor/react";
 import { Cpu, Gauge, HardDrive, MemoryStick, MonitorCheck, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,7 @@ const ramHistory = Array.from({ length: 24 }).map((_, i) => ({
 export default function Governor() {
   const [autoReduce, setAutoReduce] = React.useState(true);
   const [workers, setWorkers] = React.useState(3);
-  const [maxProfiles, setMaxProfiles] = React.useState(2);
+  const [maxProfiles] = React.useState(2);
 
   return (
     <div className="space-y-4">
@@ -27,9 +27,12 @@ export default function Governor() {
         title="Governor"
         description="RAM and CPU guardrails. When memory climbs past the guard threshold the governor reduces concurrency before the OS starts swapping."
         actions={
-          <Button variant="outline" size="sm" onClick={() => toast.success("Governor state refreshed")}>
-            <RefreshCcw /> Refresh
-          </Button>
+          <>
+            <SourceBadge source="mock" />
+            <Button variant="outline" size="sm" onClick={() => toast.success("Governor state refreshed")}>
+              <RefreshCcw /> Refresh
+            </Button>
+          </>
         }
       />
 
@@ -47,7 +50,7 @@ export default function Governor() {
             <Badge variant="success">governor healthy</Badge>
           </CardHeader>
           <CardContent>
-            <AreaChart data={ramHistory} index="t" categories={["ram", "cpu"]} colors={["indigo", "emerald"]} className="h-56" yAxisWidth={32} showGridLines={false} />
+            <AreaChart data={ramHistory} index="t" categories={["ram", "cpu"]} colors={["indigo", "emerald"]} className="h-56" yAxisWidth={40} showGridLines={false} />
           </CardContent>
         </Card>
 

@@ -3,15 +3,16 @@ import { Link, useNavigate } from "react-router-dom";
 import type { ColumnDef, RowSelectionState } from "@tanstack/react-table";
 import { Download, Eye, MoreHorizontal, Pause, Play, Plus, Trash2, Upload, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, AccountStateBadge, ModeBadge, TierBadge, Avatar } from "@/components/shared/bits";
+import { PageHeader, AccountStateBadge, ModeBadge, TierBadge, Avatar, SourceBadge } from "@/components/shared/bits";
 import { DataTable } from "@/components/shared/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox, Select } from "@/components/ui/form";
 import { Dropdown, DropdownContent, DropdownItem, DropdownSeparator, DropdownTrigger } from "@/components/ui/primitives";
-import { ImportDialog } from "@/components/shared/import-dialog";
+import { ImportDialog, type ParsedAccount } from "@/components/shared/import-dialog";
 import { RegisterDialog } from "@/components/shared/register-dialog";
-import { accounts } from "@/lib/mock";
+import { useAccountsData } from "@/lib/hooks";
+import { useImports } from "@/stores/imports";
 import type { Account } from "@/types";
 import { timeAgo, cn } from "@/lib/utils";
 
@@ -24,15 +25,27 @@ export default function Accounts() {
   const [importOpen, setImportOpen] = React.useState(false);
   const [importType, setImportType] = React.useState<"accounts" | "proxies">("accounts");
   const [registerOpen, setRegisterOpen] = React.useState(false);
-  const [importedCount, setImportedCount] = React.useState(0);
 
-  const handleImport = (result: unknown[]) => {
-    if (Array.isArray(result)) {
-      setImportedCount((p) => p + result.length);
-    }
+  const { data: accounts, imported, source } = useAccountsData();
+  const addAccounts = useImports((s) => s.addAccounts);
+  const importedCount = imported.length;
+
+  const handleImport = async (result: unknown[]) => {
+    const rows = result as ParsedAccount[];
+    const added = addAccounts(
+      rows.map((r) => ({
+        email: r.email,
+        password: r.password,
+        yelpUrl: r.yelpUrl,
+        accessEmailUrl: r.accessEmailUrl,
+      }))
+    );
+    toast.success(
+      `${added} account${added === 1 ? "" : "s"} saved${rows.length - added > 0 ? ` · ${rows.length - added} duplicate skipped` : ""}`
+    );
   };
 
-  const cities = React.useMemo(() => Array.from(new Set(accounts.map((a) => a.city))).sort(), []);
+  const cities = React.useMemo(() => Array.from(new Set(accounts.map((a) => a.city).filter((c) => c !== "—"))).sort(), [accounts]);
 
   const data = React.useMemo(
     () =>
@@ -42,7 +55,7 @@ export default function Accounts() {
           (modeFilter === "all" || a.mode === modeFilter) &&
           (cityFilter === "all" || a.city === cityFilter)
       ),
-    [stateFilter, modeFilter, cityFilter]
+    [accounts, stateFilter, modeFilter, cityFilter]
   );
 
   const columns: ColumnDef<Account>[] = [
@@ -189,6 +202,7 @@ export default function Accounts() {
         description="Every identity under management — signup pipeline, warming phase, trust gate and review eligibility."
         actions={
           <>
+            <SourceBadge source={source} />
             <Link to="/adopt">
               <Button variant="outline" size="sm">
                 <UserPlus /> Adopt

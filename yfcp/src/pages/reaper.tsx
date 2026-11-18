@@ -1,13 +1,12 @@
 import * as React from "react";
-import { AlertTriangle, CheckCircle2, Clock3, HardDrive, Play, ScanEye, Trash2 } from "lucide-react";
+import { AlertTriangle, Clock3, HardDrive, Play, ScanEye, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel, EmptyState } from "@/components/shared/bits";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, StatTile, EmptyState, SourceBadge } from "@/components/shared/bits";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input, Progress, Switch } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { cn } from "@/lib/utils";
 
 const stuckRuns = [
   { id: "run_8821", account: "owen.doyle7@live.com", kind: "warm", started: "2h 41m ago", step: "scroll_two_way" },
@@ -32,6 +31,7 @@ export default function Reaper() {
         description="System hygiene: stale locks, stuck runs, orphan GPM profiles and old artifacts. Always dry-run first — deletion is permanent."
         actions={
           <>
+            <SourceBadge source="mock" />
             <Button
               variant="outline"
               size="sm"

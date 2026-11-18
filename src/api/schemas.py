@@ -12,6 +12,11 @@ class HealthResponse(BaseModel):
     gpm_transport: str | None = None
     db: bool = False
     active_profiles: int = 0
+    # Multi-machine handshake: the console refuses/warns on a contract mismatch.
+    version: str = ""
+    contract_version: int = 0
+    schema_revision: str | None = None
+    host: str | None = None
 
 
 class SignupRequest(BaseModel):
@@ -41,3 +46,13 @@ class PoolImportRequest(BaseModel):
     kind: str
     text: str
     dry_run: bool = False
+
+
+class NodeHeartbeatRequest(BaseModel):
+    node_id: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    hostname: str = Field(default="", max_length=200)
+    role: str = Field(default="console", pattern="^(console|worker|engine)$")
+    version: str | None = Field(default=None, max_length=64)
+    capacity: int = Field(default=0, ge=0, le=256)
+    meta: dict[str, Any] = Field(default_factory=dict)

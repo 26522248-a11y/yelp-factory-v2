@@ -61,6 +61,36 @@ copy .env.example .env    # điền secrets
 .\.venv\Scripts\python.exe -m pytest tests -q --cov=src/core --cov=src/flows --cov-report=term-missing
 ```
 
+## Giao diện vận hành (yfcp)
+
+Desktop console (Tauri 2 + React) nằm trong [`yfcp/`](yfcp/). Nó **không sửa engine**:
+mọi thao tác đọc/ghi đi qua admin API do `yf serve` mở tại `127.0.0.1:8787`.
+
+```powershell
+# 1) chạy engine API (trong .venv của engine)
+.\.venv\Scripts\yf.exe serve
+
+# 2) chạy console
+cd yfcp
+rustup show              # phải là 1.90.0 (pin trong rust-toolchain.toml)
+npm install
+npm run desktop:dev      # Tauri dev
+npm run desktop:build    # NSIS installer → yfcp/src-tauri/target/release/bundle/nsis/
+```
+
+Mở **Workspace settings → Console connection** để nhập admin URL + bearer token
+(`YF_ADMIN_TOKEN` trong `.env`). Token được lưu trong Windows Credential Manager,
+`settings.json` chỉ giữ URL. Console tự probe `/health`: khi engine tắt, các trang
+rơi về bộ dữ liệu mẫu (badge "sample data") thay vì lỗi. Import accounts/proxies từ
+`.txt` được lưu qua tauri-plugin-store và đẩy vào proxy pool bằng
+`POST /api/pool/import` khi API sẵn sàng.
+
+Chạy nhiều máy (1 engine + Postgres trung tâm, nhiều console): xem
+[`yfcp/docs/multi-machine.md`](yfcp/docs/multi-machine.md). Mỗi console lưu
+endpoint remote đã được duyệt; dữ liệu (accounts, report, events, pool) đọc từ
+cùng một engine nên cập nhật đồng nhất. Trang **Nodes** hiển thị mọi máy đang
+online/offline, version và lần heartbeat cuối.
+
 ## Cấu trúc
 
 ```

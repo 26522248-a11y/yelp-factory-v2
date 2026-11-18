@@ -30,6 +30,7 @@ const Governor = React.lazy(() => import("@/pages/governor"));
 const Flags = React.lazy(() => import("@/pages/flags"));
 const Selectors = React.lazy(() => import("@/pages/selectors"));
 const Logs = React.lazy(() => import("@/pages/logs"));
+const Nodes = React.lazy(() => import("@/pages/nodes"));
 const Health = React.lazy(() => import("@/pages/health"));
 const Data = React.lazy(() => import("@/pages/data"));
 const Config = React.lazy(() => import("@/pages/config"));
@@ -114,6 +115,7 @@ export default function App() {
               <Route path="/flags" element={<Flags />} />
               <Route path="/selectors" element={<Selectors />} />
               <Route path="/logs" element={<Logs />} />
+              <Route path="/nodes" element={<Nodes />} />
               <Route path="/health" element={<Health />} />
               <Route path="/data" element={<Data />} />
               <Route path="/config" element={<Config />} />

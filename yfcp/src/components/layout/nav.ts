@@ -24,6 +24,7 @@ import {
   UserPlus,
   Users,
   Waypoints,
+  Wifi,
   Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -63,6 +64,7 @@ export const NAV: NavItem[] = [
   { label: "System flags", path: "/flags", icon: Flag, group: "System" },
   { label: "Selectors", path: "/selectors", icon: Target, group: "System" },
   { label: "Logs", path: "/logs", icon: ScrollText, group: "System" },
+  { label: "Nodes", path: "/nodes", icon: Wifi, group: "System", hint: "Machines in this deployment" },
   { label: "Health", path: "/health", icon: LifeBuoy, group: "System" },
   { label: "Data", path: "/data", icon: Download, group: "System" },
   { label: "Config", path: "/config", icon: Settings2, group: "System" },

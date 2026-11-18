@@ -1,12 +1,13 @@
 import * as React from "react";
 import { AreaChart } from "@tremor/react";
-import { Activity, Cpu, Database, HardDrive, MonitorSmartphone, RotateCcw, Server, ShieldCheck, Wifi } from "lucide-react";
+import { Activity, Cpu, Database, MonitorSmartphone, RotateCcw, Server, ShieldCheck, Wifi } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel, HealthDot } from "@/components/shared/bits";
+import { PageHeader, StatTile, HealthDot, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/form";
+import { useApiHealth, useEngineReport, usePoolStats } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 const history = Array.from({ length: 30 }).map((_, i) => ({
@@ -15,16 +16,28 @@ const history = Array.from({ length: 30 }).map((_, i) => ({
   ram: Math.round(50 + Math.cos(i / 4) * 10 + Math.random() * 4),
 }));
 
-const services = [
-  { name: "PostgreSQL", detail: "127.0.0.1:5433 · pool 5/10", ok: true, latency: "4ms", icon: Database },
-  { name: "GPM Login Global", detail: ":9495 · v3.4.1", ok: true, latency: "12ms", icon: MonitorSmartphone },
-  { name: "Admin API", detail: "127.0.0.1:8787", ok: true, latency: "2ms", icon: Server },
-  { name: "Playwright", detail: "chromium 131.0.6778", ok: true, icon: Activity },
-  { name: "Internet", detail: "egress via proxy pool", ok: true, latency: "38ms", icon: Wifi },
-  { name: "Captcha solver", detail: "capsolver primary · 2captcha backup", ok: true, latency: "1.2s", icon: ShieldCheck },
-];
-
 export default function Health() {
+  const health = useApiHealth();
+  const report = useEngineReport("24h");
+  const pool = usePoolStats();
+
+  const apiOk = !!health.data && !health.isError;
+  const services = [
+    { name: "PostgreSQL", detail: `127.0.0.1:5433 · ${health.data ? (health.data.db ? "up" : "down") : "not probed"}`, ok: health.data?.db ?? false, latency: "4ms", icon: Database },
+    { name: "GPM Login Global", detail: health.data?.gpm_transport ?? "127.0.0.1:9495", ok: apiOk, latency: "12ms", icon: MonitorSmartphone },
+    { name: "Admin API", detail: apiOk ? "127.0.0.1:8787 · connected" : report.error ?? "offline", ok: apiOk, latency: apiOk ? "2ms" : undefined, icon: Server },
+    {
+      name: "Proxy pool",
+      detail: pool.source === "live"
+        ? `${pool.stats.available_proxies} available · ${Object.values(pool.stats.proxies).reduce((a, b) => a + b, 0)} total`
+        : "sample counts — engine offline",
+      ok: pool.source === "live" && pool.stats.available_proxies > 0,
+      icon: Activity,
+    },
+    { name: "Internet", detail: "egress via proxy pool", ok: true, latency: "38ms", icon: Wifi },
+    { name: "Captcha solver", detail: "capsolver primary · 2captcha backup", ok: true, latency: "1.2s", icon: ShieldCheck },
+  ];
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -33,6 +46,7 @@ export default function Health() {
         description="Host resources, service probes and the processes the console is supervising. This page is the first stop when something feels off."
         actions={
           <>
+            <SourceBadge source={apiOk ? "live" : "mock"} />
             <Button variant="outline" size="sm" onClick={() => toast.success("Reaper ran")}>
               <RotateCcw /> Run reaper
             </Button>
@@ -46,7 +60,7 @@ export default function Health() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="CPU" value="38%" hint="4 vCPU · Xeon Gold 6133" tone="success" icon={<Cpu className="h-4 w-4" />} />
         <StatTile label="RAM" value="61%" hint="2.44 / 4.00 GB" tone="success" />
-        <StatTile label="Disk" value="50%" hint="18.5 GB free" tone="success" icon={<HardDrive className="h-4 w-4" />} />
+        <StatTile label="Queue depth" value={report.data?.queue_depth ?? 0} hint="pending jobs" tone={report.data?.queue_depth ? "warning" : "success"} />
         <StatTile label="Uptime" value="6d 4h" hint="console" tone="info" />
       </div>
 
@@ -56,7 +70,7 @@ export default function Health() {
             <CardTitle>Resource pressure — 30 minutes</CardTitle>
           </CardHeader>
           <CardContent>
-            <AreaChart data={history} index="t" categories={["cpu", "ram"]} colors={["emerald", "indigo"]} className="h-52" yAxisWidth={32} showGridLines={false} />
+            <AreaChart data={history} index="t" categories={["cpu", "ram"]} colors={["emerald", "indigo"]} className="h-52" yAxisWidth={40} showGridLines={false} />
           </CardContent>
         </Card>
 

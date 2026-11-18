@@ -2,12 +2,12 @@ import * as React from "react";
 import { AreaChart, BarChart } from "@tremor/react";
 import { AlertTriangle, TrendingUp, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/form";
-import { assignments, clients, reviewVelocity } from "@/lib/mock";
+import { useAssignmentsData, useClientsData, useReviewVelocityData } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 const metroActivity = [
@@ -20,6 +20,9 @@ const metroActivity = [
 ];
 
 export default function Velocity() {
+  const { data: assignments } = useAssignmentsData();
+  const { data: clients } = useClientsData();
+  const { data: reviewVelocity, source } = useReviewVelocityData();
   const stalledClients = clients.filter((c) => c.reviewsPosted < 4);
   const posted = reviewVelocity.reduce((s, d) => s + d.posted, 0);
   const filtered = reviewVelocity.reduce((s, d) => s + d.filtered, 0);
@@ -31,9 +34,12 @@ export default function Velocity() {
         title="Velocity"
         description="How fast reviews are going out, per account, per client and per metro. Runaway velocity is a filter risk."
         actions={
-          <Button variant="outline" size="sm" onClick={() => toast.success("Velocity thresholds saved")}>
-            Tune thresholds
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button variant="outline" size="sm" onClick={() => toast.success("Velocity thresholds saved")}>
+              Tune thresholds
+            </Button>
+          </>
         }
       />
 
@@ -56,7 +62,7 @@ export default function Velocity() {
               categories={["posted", "rate"]}
               colors={["emerald", "rose"]}
               className="h-56"
-              yAxisWidth={32}
+              yAxisWidth={40}
               showGridLines={false}
             />
           </CardContent>
@@ -67,7 +73,7 @@ export default function Velocity() {
             <CardTitle>Metro activity</CardTitle>
           </CardHeader>
           <CardContent>
-            <BarChart data={metroActivity} index="metro" categories={["reviews", "accounts"]} colors={["indigo", "sky"]} className="h-56" yAxisWidth={28} showGridLines={false} />
+            <BarChart data={metroActivity} index="metro" categories={["reviews", "accounts"]} colors={["indigo", "sky"]} className="h-56" yAxisWidth={40} showGridLines={false} />
           </CardContent>
         </Card>
       </div>

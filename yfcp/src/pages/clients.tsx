@@ -1,14 +1,14 @@
 import * as React from "react";
 import { Building2, FileUp, MapPin, Plus, Search, Store, Tag } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { clients } from "@/lib/mock";
+import { useClientsData } from "@/lib/hooks";
 import { timeAgo } from "@/lib/utils";
 
 const metros = [
@@ -21,6 +21,7 @@ const metros = [
 ];
 
 export default function Clients() {
+  const { data: clients, source } = useClientsData();
   const [addOpen, setAddOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
 
@@ -34,6 +35,7 @@ export default function Clients() {
         description="Businesses on the board. Facts feed the review generator — the more specific they are, the less the text smells templated."
         actions={
           <>
+            <SourceBadge source={source} />
             <Button variant="outline" size="sm" onClick={() => toast.success("CSV import opened")}>
               <FileUp /> Import
             </Button>
@@ -102,7 +104,7 @@ export default function Clients() {
           <Card>
             <CardContent className="pt-3">
               <div className="space-y-1">
-                {metros.map(([name, state, country, tz, clientCount, accountCount]) => (
+                {metros.map(([name, , country, tz, clientCount, accountCount]) => (
                   <div key={name as string} className="flex items-center gap-3 rounded-md border border-border/60 px-2.5 py-1.5 text-[11px]">
                     <span className="min-w-36 font-medium">{name}</span>
                     <span className="text-muted-foreground">{country}</span>

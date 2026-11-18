@@ -1,13 +1,13 @@
 import * as React from "react";
 import { AlertTriangle, ArrowRight, Download, Radar, Search, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel, EmptyState } from "@/components/shared/bits";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, StatTile, SectionLabel, EmptyState, SourceBadge } from "@/components/shared/bits";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { auditIssues } from "@/lib/mock";
+import { useAuditIssuesData } from "@/lib/hooks";
 import type { AuditIssue } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,7 @@ const kindLabel = {
 };
 
 export default function Audit() {
+  const { data: auditIssues, source } = useAuditIssuesData();
   const [open, setOpen] = React.useState<AuditIssue | null>(null);
   const [running, setRunning] = React.useState(false);
 
@@ -31,19 +32,22 @@ export default function Audit() {
         title="Pool & trust audit"
         description="Anti-detect hygiene. Finds accounts sharing an ASN inside a metro, proxies with no ASN data, and accounts marked review-ready below the gate."
         actions={
-          <Button
-            size="sm"
-            loading={running}
-            onClick={() => {
-              setRunning(true);
-              setTimeout(() => {
-                setRunning(false);
-                toast.success("Audit complete — 4 issues, 23 affected accounts");
-              }, 1600);
-            }}
-          >
-            <Radar /> Run audit
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button
+              size="sm"
+              loading={running}
+              onClick={() => {
+                setRunning(true);
+                setTimeout(() => {
+                  setRunning(false);
+                  toast.success("Audit complete — 4 issues, 23 affected accounts");
+                }, 1600);
+              }}
+            >
+              <Radar /> Run audit
+            </Button>
+          </>
         }
       />
 

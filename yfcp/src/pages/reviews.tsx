@@ -2,20 +2,23 @@ import * as React from "react";
 import { BarChart, DonutChart } from "@tremor/react";
 import { BadgeCheck, CalendarClock, Filter, Image as ImageIcon, Send, Sparkles, Star } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel, EmptyState } from "@/components/shared/bits";
+import { PageHeader, StatTile, SectionLabel, EmptyState, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { assignments, clients, reviews, reviewVelocity } from "@/lib/mock";
+import { useAssignmentsData, useClientsData, useReviewsData, useReviewVelocityData } from "@/lib/hooks";
 import { cn, timeAgo } from "@/lib/utils";
 
-const FILTERED = reviews.filter((r) => r.status === "filtered").length;
-const filterRate = Math.round((FILTERED / Math.max(1, reviews.length)) * 100);
-
 export default function Reviews() {
+  const { data: reviews, source } = useReviewsData();
+  const { data: assignments } = useAssignmentsData();
+  const { data: clients } = useClientsData();
+  const { data: reviewVelocity } = useReviewVelocityData();
+  const FILTERED = reviews.filter((r) => r.status === "filtered").length;
+  const filterRate = Math.round((FILTERED / Math.max(1, reviews.length)) * 100);
   const [postOpen, setPostOpen] = React.useState<string | null>(null);
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [text, setText] = React.useState(
@@ -31,9 +34,12 @@ export default function Reviews() {
         title="Reviews"
         description="Assignments, posting and filter tracking. Text is generated from client facts, deduped by 5-gram, and always ships with a photo."
         actions={
-          <Button size="sm" onClick={() => setAssignOpen(true)}>
-            <CalendarClock /> Assign reviews
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button size="sm" onClick={() => setAssignOpen(true)}>
+              <CalendarClock /> Assign reviews
+            </Button>
+          </>
         }
       />
 
@@ -50,7 +56,7 @@ export default function Reviews() {
             <CardTitle>Published vs. filtered</CardTitle>
           </CardHeader>
           <CardContent>
-            <BarChart data={reviewVelocity} index="day" categories={["posted", "filtered"]} colors={["emerald", "rose"]} className="h-48" yAxisWidth={28} showGridLines={false} />
+            <BarChart data={reviewVelocity} index="day" categories={["posted", "filtered"]} colors={["emerald", "rose"]} className="h-48" yAxisWidth={40} showGridLines={false} />
           </CardContent>
         </Card>
         <Card>

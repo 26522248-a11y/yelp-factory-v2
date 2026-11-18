@@ -12,6 +12,7 @@ export function CommandPalette() {
   const navigate = useNavigate();
   const [q, setQ] = React.useState("");
   const [idx, setIdx] = React.useState(0);
+  const listRef = React.useRef<HTMLDivElement>(null);
 
   const items = NAV.filter(
     (n) =>
@@ -26,6 +27,12 @@ export function CommandPalette() {
   React.useEffect(() => {
     if (!commandOpen) setQ("");
   }, [commandOpen]);
+
+  React.useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-palette-index="${idx}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [idx]);
 
   const run = (path: string) => {
     setCommandOpen(false);
@@ -57,7 +64,7 @@ export function CommandPalette() {
           />
           <Kbd>esc</Kbd>
         </div>
-        <div className="max-h-72 overflow-y-auto p-1.5 scrollbar-thin">
+        <div ref={listRef} className="max-h-72 overflow-y-auto p-1.5 scrollbar-thin">
           {items.length === 0 ? (
             <div className="px-3 py-6 text-center text-xs text-muted-foreground">No matches.</div>
           ) : (
@@ -66,6 +73,7 @@ export function CommandPalette() {
               return (
                 <button
                   key={item.path}
+                  data-palette-index={i}
                   onMouseEnter={() => setIdx(i)}
                   onClick={() => run(item.path)}
                   className={cn(
@@ -81,6 +89,12 @@ export function CommandPalette() {
               );
             })
           )}
+        </div>
+        <div className="flex items-center gap-3 border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd> navigate</span>
+          <span className="flex items-center gap-1"><Kbd>↵</Kbd> open</span>
+          <span className="flex items-center gap-1"><Kbd>esc</Kbd> close</span>
+          <span className="ml-auto">{items.length} pages</span>
         </div>
       </DialogContent>
     </Dialog>

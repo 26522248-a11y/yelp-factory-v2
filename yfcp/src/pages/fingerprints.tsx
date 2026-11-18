@@ -2,13 +2,12 @@ import * as React from "react";
 import { BarChart, DonutChart } from "@tremor/react";
 import { Fingerprint, ScanLine, ShieldCheck, Wand2 } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Field, Input, Progress } from "@/components/ui/form";
-import { accounts } from "@/lib/mock";
-import { cn } from "@/lib/utils";
+import { Field, Input } from "@/components/ui/form";
+import { useAccountsData } from "@/lib/hooks";
 
 const windows = [
   { size: "1920×1080", count: 22 },
@@ -19,6 +18,7 @@ const windows = [
 ];
 
 export default function Fingerprints() {
+  const { data: accounts, source } = useAccountsData();
   const [lookup, setLookup] = React.useState(accounts[0].email);
   const found = accounts.find((a) => a.email === lookup) ?? accounts[0];
 
@@ -29,9 +29,12 @@ export default function Fingerprints() {
         title="Fingerprint matrix"
         description="Each account gets a deterministic browser fingerprint from its ID. The matrix exists to make the farm look like many people, not one."
         actions={
-          <Button variant="outline" size="sm" onClick={() => toast.success("Fingerprint audit complete")}>
-            <ScanLine /> Audit diversity
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button variant="outline" size="sm" onClick={() => toast.success("Fingerprint audit complete")}>
+              <ScanLine /> Audit diversity
+            </Button>
+          </>
         }
       />
 
@@ -48,7 +51,7 @@ export default function Fingerprints() {
             <CardTitle>Window size distribution</CardTitle>
           </CardHeader>
           <CardContent>
-            <BarChart data={windows} index="size" categories={["count"]} colors={["indigo"]} className="h-48" yAxisWidth={28} showGridLines={false} />
+            <BarChart data={windows} index="size" categories={["count"]} colors={["indigo"]} className="h-48" yAxisWidth={40} showGridLines={false} />
           </CardContent>
         </Card>
         <Card>

@@ -20,6 +20,7 @@
     "store:default",
     "opener:default",
     "os:default",
+    "os:allow-hostname",
     "process:default"
   ]
 }

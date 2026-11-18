@@ -2,20 +2,20 @@ import * as React from "react";
 import { AreaChart } from "@tremor/react";
 import { Pause, Play, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress, Switch } from "@/components/ui/form";
-import { reviewVelocity } from "@/lib/mock";
+import { useReviewVelocityData } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
-const filterSeries = reviewVelocity.map((d) => ({
-  day: d.day,
-  rate: Math.round((d.filtered / Math.max(1, d.posted)) * 100),
-}));
-
 export default function Volume() {
+  const { data: reviewVelocity, source } = useReviewVelocityData();
+  const filterSeries = reviewVelocity.map((d) => ({
+    day: d.day,
+    rate: Math.round((d.filtered / Math.max(1, d.posted)) * 100),
+  }));
   const [pin, setPin] = React.useState(100);
   const [paused, setPaused] = React.useState(false);
   const [overrideLazy, setOverrideLazy] = React.useState(false);
@@ -33,6 +33,7 @@ export default function Volume() {
         description="Output is throttled three ways: lazy weeks, filter-rate response and a manual pin. Whatever you set, the effective multiplier is the product."
         actions={
           <>
+            <SourceBadge source={source} />
             {paused ? (
               <Button size="sm" variant="success" onClick={() => { setPaused(false); toast.success("Volume resumed"); }}>
                 <Play /> Resume
@@ -62,7 +63,7 @@ export default function Volume() {
             <CardTitle>Filter-rate response</CardTitle>
           </CardHeader>
           <CardContent>
-            <AreaChart data={filterSeries} index="day" categories={["rate"]} colors={["rose"]} className="h-52" yAxisWidth={32} showGridLines={false} />
+            <AreaChart data={filterSeries} index="day" categories={["rate"]} colors={["rose"]} className="h-52" yAxisWidth={40} showGridLines={false} />
           </CardContent>
         </Card>
 

@@ -1,0 +1,6 @@
+[toolchain]
+# Tauri 2.12.x (and several of its transitive crates) declare rust-version 1.90.
+# Pinning here makes local builds, CI and the installer machine identical.
+# Check with `rustup show` before building.
+channel = "1.90.0"
+components = ["rustfmt", "clippy"]

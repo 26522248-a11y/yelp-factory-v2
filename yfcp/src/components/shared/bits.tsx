@@ -149,6 +149,24 @@ export function HealthDot({ ok, label }: { ok: boolean; label?: string }) {
   );
 }
 
+const SOURCE_TONE = {
+  live: { variant: "success" as const, label: "live engine", dot: "bg-success" },
+  local: { variant: "info" as const, label: "local import", dot: "bg-info" },
+  pending: { variant: "warning" as const, label: "endpoint not wired", dot: "bg-warning" },
+  mock: { variant: "muted" as const, label: "sample data", dot: "bg-muted-foreground" },
+};
+
+/** Tells the operator whether a table/chart is fed by the engine or fallback data. */
+export function SourceBadge({ source, className }: { source: "live" | "local" | "pending" | "mock"; className?: string }) {
+  const tone = SOURCE_TONE[source];
+  return (
+    <Badge variant={tone.variant} className={cn("text-[9px]", className)} title={`Data source: ${tone.label}`}>
+      <span className={cn("h-1.5 w-1.5 rounded-full", tone.dot)} />
+      {tone.label}
+    </Badge>
+  );
+}
+
 export function EmptyState({ icon, title, description, action }: { icon?: React.ReactNode; title: string; description?: string; action?: React.ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">

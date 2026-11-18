@@ -2,13 +2,13 @@ import * as React from "react";
 import { BarChart, DonutChart } from "@tremor/react";
 import { CalendarRange, Download, FileText, Printer, Table2 } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { activity7d, reviewVelocity, trustHistory } from "@/lib/mock";
+import { useActivity7dData, useEngineReport, useTrustHistoryData } from "@/lib/hooks";
 
 const reports = [
   ["Signup report", "Accounts created per day, success rate, average duration and the top failure reasons."],
@@ -21,6 +21,10 @@ const reports = [
 ];
 
 export default function Reports() {
+  const report = useEngineReport("30d");
+  const { data: activity7d } = useActivity7dData();
+  const { data: trustHistory } = useTrustHistoryData();
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -29,6 +33,7 @@ export default function Reports() {
         description="Board-ready summaries. Every chart exports to PNG, every dataset to CSV, and the whole page to PDF."
         actions={
           <>
+            <SourceBadge source={report.source} />
             <Select className="h-8 w-40 text-xs" defaultValue="30">
               <option value="7">Last 7 days</option>
               <option value="30">Last 30 days</option>
@@ -42,10 +47,10 @@ export default function Reports() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Signups (30d)" value={48} delta="+12%" tone="success" />
-        <StatTile label="Warming sessions" value={312} delta="+8%" />
+        <StatTile label="Signups (30d)" value={report.data?.signups_ok ?? 48} delta="+12%" tone="success" />
+        <StatTile label="Signup failures" value={report.data?.signups_failed ?? 6} hint="runs failed in window" tone={report.data?.signups_failed ? "warning" : "success"} />
         <StatTile label="Reviews published" value={86} delta="+4%" tone="info" />
-        <StatTile label="Filter rate" value="18%" delta="-3%" tone="success" />
+        <StatTile label="Queue depth" value={report.data?.queue_depth ?? 0} hint="pending runs" tone={report.data?.queue_depth ? "warning" : "success"} />
       </div>
 
       <Tabs defaultValue="overview">
@@ -61,7 +66,7 @@ export default function Reports() {
               <CardTitle>Activity</CardTitle>
             </CardHeader>
             <CardContent>
-              <BarChart data={activity7d} index="day" categories={["signups", "sessions", "reviews"]} colors={["indigo", "sky", "emerald"]} className="h-56" yAxisWidth={28} showGridLines={false} />
+              <BarChart data={activity7d} index="day" categories={["signups", "sessions", "reviews"]} colors={["indigo", "sky", "emerald"]} className="h-56" yAxisWidth={40} showGridLines={false} />
             </CardContent>
           </Card>
           <Card>
@@ -90,7 +95,7 @@ export default function Reports() {
               <CardTitle>Trust growth</CardTitle>
             </CardHeader>
             <CardContent>
-              <BarChart data={trustHistory.slice(-14)} index="day" categories={["avg"]} colors={["indigo"]} className="h-44" yAxisWidth={32} showGridLines={false} />
+              <BarChart data={trustHistory.slice(-14)} index="day" categories={["avg"]} colors={["indigo"]} className="h-44" yAxisWidth={40} showGridLines={false} />
             </CardContent>
           </Card>
         </TabsContent>

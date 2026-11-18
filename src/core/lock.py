@@ -149,6 +149,8 @@ def acquire_slot(worker_id: str, max_slots: int, *, purpose: str = "warm") -> uu
     workers can never both observe count = max-1 (proven by a 5-thread race test).
     """
     token = uuid.uuid4()
+    from core.node_identity import NODE_ID
+
     with session_scope() as session:
         session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": SLOT_LOCK_KEY})
         _prune_slots(session)
@@ -157,10 +159,10 @@ def acquire_slot(worker_id: str, max_slots: int, *, purpose: str = "warm") -> uu
             return None
         session.execute(
             text(
-                "INSERT INTO browser_slots (token, worker_id, purpose, heartbeat_at, ttl_seconds) "
-                "VALUES (:token, :worker, :purpose, now(), 7200)"
+                "INSERT INTO browser_slots (token, worker_id, node_id, purpose, heartbeat_at, ttl_seconds) "
+                "VALUES (:token, :worker, :node, :purpose, now(), 7200)"
             ),
-            {"token": str(token), "worker": worker_id, "purpose": purpose},
+            {"token": str(token), "worker": worker_id, "node": NODE_ID, "purpose": purpose},
         )
     return token
 

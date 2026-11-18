@@ -136,7 +136,20 @@ export function DataTable<TData, TValue>({
               table.getRowModel().rows.map((row) => (
                 <tr
                   key={row.id}
-                  onClick={() => onRowClick?.(row.original)}
+                  onClick={(e) => {
+                    if (!onRowClick) return;
+                    // Don't navigate when the click belongs to a control inside the row
+                    // (checkbox, dropdown trigger, action button, link…).
+                    const target = e.target as HTMLElement | null;
+                    if (
+                      target?.closest(
+                        "button, a, input, select, textarea, label, [role='checkbox'], [role='menuitem'], [data-no-row-click]"
+                      )
+                    ) {
+                      return;
+                    }
+                    onRowClick(row.original);
+                  }}
                   className={cn(
                     "border-b border-border/60 transition-colors last:border-0 hover:bg-accent/40",
                     onRowClick && "cursor-pointer",

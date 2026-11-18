@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { ChevronLeft, Minus, Search, Settings2, Square, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, Minus, RotateCcw, Search, Settings2, Square, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUi } from "@/stores/ui";
 import { NAV, NAV_GROUPS } from "./nav";
@@ -8,8 +8,12 @@ import { Tooltip } from "@/components/ui/primitives";
 import { Kbd } from "@/components/ui/form";
 import { CommandPalette } from "./command-palette";
 import { StatusBar } from "./status-bar";
+import { apiErrorMessage, CONTRACT_VERSION } from "@/lib/bridge";
+import { useApiConfig, useApiHealth, useEngineReport, useNodeHeartbeat } from "@/lib/hooks";
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const isMac = typeof navigator !== "undefined" && /mac|iphone|ipad/i.test(navigator.platform);
+const paletteShortcut = isMac ? "⌘K" : "Ctrl K";
 
 function isActivePath(routePath: string, currentPath: string): boolean {
   if (routePath === "/") return currentPath === "/";
@@ -18,8 +22,69 @@ function isActivePath(routePath: string, currentPath: string): boolean {
   return currentPath === routePath || currentPath.startsWith(routePath + "/");
 }
 
-function WindowControls() {
-  if (!isTauri) return null;
+/**
+ * Global data-source banner. Two distinct failure modes:
+ *  - engine unreachable  → sample data, start `yf serve`;
+ *  - engine reachable but /report failed (bad/missing token) → auth/config hint.
+ * Per-page "endpoint not wired" badges cover resources the engine does not serve.
+ */
+function ConnectionBanner() {
+  const health = useApiHealth();
+  const report = useEngineReport("24h");
+  const config = useApiConfig();
+
+  const offline = health.isError;
+  const dataFailed = !offline && !!report.error;
+  const mismatch =
+    !offline &&
+    !!health.data &&
+    typeof health.data.contract_version === "number" &&
+    health.data.contract_version !== CONTRACT_VERSION;
+  if (!offline && !dataFailed && !mismatch) return null;
+
+  const title = offline
+    ? "Engine offline — showing sample data."
+    : dataFailed
+    ? "Engine reachable, data requests failed."
+    : `Version mismatch: console contract v${CONTRACT_VERSION}, engine v${health.data?.contract_version}.`;
+
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] text-warning">
+      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+      <span className="font-medium">{title}</span>
+      <span className="text-warning/80">
+        {offline ? (
+          <>
+            Start the engine with <code className="rounded bg-warning/15 px-1">yf serve</code>, then retry.
+          </>
+        ) : dataFailed ? (
+          apiErrorMessage(report.error)
+        ) : (
+          <>Update the console or engine so both speak the same contract.</>
+        )}
+      </span>
+      <span className="font-mono text-[10px] text-warning/60">
+        {config.data?.baseUrl}
+        {health.data?.host ? ` · ${health.data.host}` : ""}
+        {health.data?.version ? ` · v${health.data.version}` : ""}
+      </span>
+      <button
+        onClick={() => {
+          void health.refetch();
+          void report.refetch();
+        }}
+        className="ml-auto inline-flex items-center gap-1 rounded border border-warning/40 px-2 py-0.5 hover:bg-warning/15"
+      >
+        <RotateCcw className="h-3 w-3" /> Retry
+      </button>
+      <Link to="/config" className="underline underline-offset-2 hover:text-warning/80">
+        Connection settings
+      </Link>
+    </div>
+  );
+}
+
+function WindowControls() {  if (!isTauri) return null;
   const act = async (fn: "min" | "max" | "close") => {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const w = getCurrentWindow();
@@ -46,6 +111,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarCollapsed, toggleSidebar, setCommandOpen } = useUi();
   const location = useLocation();
   const navigate = useNavigate();
+  useNodeHeartbeat();
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -112,7 +178,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {!sidebarCollapsed && (
                 <>
                   <span className="flex-1 text-left">Jump to…</span>
-                  <Kbd>⌘K</Kbd>
+                  <Kbd>{paletteShortcut}</Kbd>
                 </>
               )}
             </button>
@@ -179,7 +245,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Main */}
         <div className="flex min-w-0 flex-1 flex-col">
           <main className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-            <div className="mx-auto w-full max-w-[1500px] px-5 py-4">{children}</div>
+            <div className="mx-auto w-full max-w-[1500px] px-5 py-4">
+              <ConnectionBanner />
+              {children}
+            </div>
           </main>
           <StatusBar />
         </div>

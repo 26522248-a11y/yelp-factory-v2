@@ -1,16 +1,17 @@
 import * as React from "react";
 import { AlertTriangle, Code2, Save, Search, Target } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input, Progress, Textarea } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { selectors } from "@/lib/mock";
+import { useSelectorsData } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 
 export default function Selectors() {
+  const { data: selectors, source } = useSelectorsData();
   const [selected, setSelected] = React.useState(selectors[0]);
   const [testHtml, setTestHtml] = React.useState('<button id="onetrust-accept-btn-handler">Accept all</button>');
   const [testResult, setTestResult] = React.useState<string | null>(null);
@@ -27,6 +28,7 @@ export default function Selectors() {
         description="Yelp ships DOM changes. Every interaction is a priority list of CSS, label, placeholder and text strategies — this is where you fix them."
         actions={
           <>
+            <SourceBadge source={source} />
             <Button variant="outline" size="sm" onClick={() => toast.success("registry.yaml reloaded")}>
               Reload
             </Button>

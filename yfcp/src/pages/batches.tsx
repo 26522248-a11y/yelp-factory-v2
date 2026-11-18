@@ -1,14 +1,14 @@
 import * as React from "react";
 import { ArrowRight, Layers, Pause, Play, Plus, Square } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, SectionLabel, StatTile } from "@/components/shared/bits";
+import { PageHeader, SectionLabel, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress, Field, Input, Select, Textarea } from "@/components/ui/form";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { batches, accounts } from "@/lib/mock";
+import { useBatchesData, useAccountsData } from "@/lib/hooks";
 import type { Batch } from "@/types";
 import { timeAgo } from "@/lib/utils";
 
@@ -20,6 +20,8 @@ const statusVariant = {
 } as const;
 
 export default function Batches() {
+  const { data: batches, source } = useBatchesData();
+  const { data: accounts } = useAccountsData();
   const [open, setOpen] = React.useState<Batch | null>(null);
   const [create, setCreate] = React.useState(false);
 
@@ -33,9 +35,12 @@ export default function Batches() {
         title="Batches"
         description="Group accounts by intake wave. Batch state drives how much warming and review volume is released."
         actions={
-          <Button size="sm" onClick={() => setCreate(true)}>
-            <Plus /> New batch
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button size="sm" onClick={() => setCreate(true)}>
+              <Plus /> New batch
+            </Button>
+          </>
         }
       />
 

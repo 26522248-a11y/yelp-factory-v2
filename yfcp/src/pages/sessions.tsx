@@ -2,18 +2,20 @@ import * as React from "react";
 import { Activity, CircleStop, Clock3, MonitorPlay, RefreshCcw, Square } from "lucide-react";
 import { toast } from "sonner";
 import { AreaChart } from "@tremor/react";
-import { PageHeader, SectionLabel, StatTile, EmptyState } from "@/components/shared/bits";
+import { PageHeader, SectionLabel, StatTile, EmptyState, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/form";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { runs, warmingSessions } from "@/lib/mock";
+import { useRunsData, useWarmingSessionsData } from "@/lib/hooks";
 import type { Run } from "@/types";
 import { formatDuration, timeAgo } from "@/lib/utils";
 
 export default function Sessions() {
+  const { data: runs, source } = useRunsData();
+  const { data: warmingSessions } = useWarmingSessionsData();
   const [detail, setDetail] = React.useState<Run | null>(null);
   const tick = React.useState(0)[1];
   React.useEffect(() => {
@@ -45,9 +47,12 @@ export default function Sessions() {
         title="Sessions"
         description="Every browser run in flight and the trails left behind. Kill a run, resume from a checkpoint, or inspect its browser."
         actions={
-          <Button variant="outline" size="sm" onClick={() => toast.success("Sessions refreshed")}>
-            <RefreshCcw /> Refresh
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button variant="outline" size="sm" onClick={() => toast.success("Sessions refreshed")}>
+              <RefreshCcw /> Refresh
+            </Button>
+          </>
         }
       />
 
@@ -138,7 +143,7 @@ export default function Sessions() {
               <CardTitle>Session length and action volume</CardTitle>
             </CardHeader>
             <CardContent>
-              <AreaChart data={durationSeries} index="run" categories={["minutes", "actions"]} colors={["indigo", "emerald"]} className="h-64" yAxisWidth={32} showGridLines={false} />
+              <AreaChart data={durationSeries} index="run" categories={["minutes", "actions"]} colors={["indigo", "emerald"]} className="h-64" yAxisWidth={40} showGridLines={false} />
             </CardContent>
           </Card>
         </TabsContent>

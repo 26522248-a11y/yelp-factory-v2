@@ -935,7 +935,14 @@ def cmd_db_init(args) -> int:
 def cmd_serve(args) -> int:
     import uvicorn
 
+    from core.node_identity import start_heartbeat_loop
+
     settings = get_settings()
+    start_heartbeat_loop(
+        role="engine",
+        capacity=settings.concurrency.max_profiles,
+        meta={"service": "admin-api"},
+    )
     uvicorn.run("api.admin:app", host=settings.admin_host, port=args.port or settings.admin_port, log_level="info")
     return 0
 

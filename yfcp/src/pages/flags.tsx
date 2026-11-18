@@ -1,18 +1,19 @@
 import * as React from "react";
 import { Flag, Plus, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, SectionLabel, StatTile } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { JsonViewer } from "@/components/shared/bits";
-import { systemFlags } from "@/lib/mock";
+import { useSystemFlagsData } from "@/lib/hooks";
 import type { SystemFlag } from "@/types";
 import { timeAgo } from "@/lib/utils";
 
 export default function Flags() {
+  const { data: systemFlags, source } = useSystemFlagsData();
   const [flags, setFlags] = React.useState<SystemFlag[]>(systemFlags);
   const [editing, setEditing] = React.useState<SystemFlag | null>(null);
   const [draft, setDraft] = React.useState("{}");
@@ -24,9 +25,12 @@ export default function Flags() {
         title="System flags"
         description="Operational switches stored in the database so every worker sees them instantly. Volume pin, pause, filter alert thresholds and recompute markers."
         actions={
-          <Button size="sm" onClick={() => { setEditing({ key: "", value: {}, updatedAt: new Date().toISOString() }); setDraft("{}"); }}>
-            <Plus /> New flag
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button size="sm" onClick={() => { setEditing({ key: "", value: {}, updatedAt: new Date().toISOString() }); setDraft("{}"); }}>
+              <Plus /> New flag
+            </Button>
+          </>
         }
       />
 

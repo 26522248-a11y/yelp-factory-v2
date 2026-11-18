@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import select
 
 from core.budget import DailyBudget, phase_for_day
+from core.config import get_settings
 from db.models import Account, AccountState, WarmingPlan, WarmingTask
 from db.session import session_scope
 from flows.warmup import WarmingTaskSpec, build_day_tasks
@@ -236,6 +237,14 @@ async def run_due(deps, *, limit: int = 8, max_seconds: int = 480) -> dict[str, 
 async def scheduler_loop(deps, *, interval_s: int = 300, max_seconds: int = 480) -> None:
     import asyncio
 
+    from core.node_identity import start_heartbeat_loop
+
+    settings = get_settings()
+    start_heartbeat_loop(
+        role="worker",
+        capacity=settings.concurrency.max_profiles,
+        meta={"service": "scheduler"},
+    )
     while True:
         try:
             bootstrap()

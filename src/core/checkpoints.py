@@ -109,8 +109,17 @@ def load_account(account_id: uuid.UUID) -> Account | None:
         return session.get(Account, account_id)
 
 
-def open_run(account_id: uuid.UUID, *, kind: str = "signup", trace_id: str | None = None, worker_id: str | None = None) -> uuid.UUID:
+def open_run(
+    account_id: uuid.UUID,
+    *,
+    kind: str = "signup",
+    trace_id: str | None = None,
+    worker_id: str | None = None,
+    node_id: str | None = None,
+) -> uuid.UUID:
     """Open a run; a duplicate RUNNING run is rejected by the partial unique index (E-26)."""
+    from core.node_identity import NODE_ID
+
     with session_scope() as session:
         run = Run(
             account_id=account_id,
@@ -118,6 +127,7 @@ def open_run(account_id: uuid.UUID, *, kind: str = "signup", trace_id: str | Non
             state=RunState.RUNNING.value,
             started_at=datetime.now(timezone.utc),
             worker_id=worker_id,
+            node_id=node_id or NODE_ID,
             trace_id=trace_id,
         )
         session.add(run)

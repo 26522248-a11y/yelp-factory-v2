@@ -1,6 +1,6 @@
 import * as React from "react";
 import { toast } from "sonner";
-import { AlertCircle, CheckCircle2, FileText, Upload, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, RefreshCw, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +36,7 @@ interface ImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   type: ImportType;
-  onImport?: (result: (ParsedAccount | ParsedProxy)[]) => void;
+  onImport?: (result: (ParsedAccount | ParsedProxy)[]) => void | Promise<void>;
 }
 
 export function ImportDialog({ open, onOpenChange, type, onImport }: ImportDialogProps) {
@@ -44,6 +44,7 @@ export function ImportDialog({ open, onOpenChange, type, onImport }: ImportDialo
   const [parsed, setParsed] = React.useState<(ParsedAccount | ParsedProxy)[]>([]);
   const [errors, setErrors] = React.useState<string[]>([]);
   const [fileLoaded, setFileLoaded] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
 
   const isAccount = type === "accounts";
   const title = isAccount ? "Import Accounts" : "Import Proxies";
@@ -57,6 +58,7 @@ export function ImportDialog({ open, onOpenChange, type, onImport }: ImportDialo
       setParsed([]);
       setErrors([]);
       setFileLoaded("");
+      setBusy(false);
     }
   }, [open]);
 
@@ -120,14 +122,20 @@ export function ImportDialog({ open, onOpenChange, type, onImport }: ImportDialo
     [parseText]
   );
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (parsed.length === 0) {
       toast.error("No valid rows to import");
       return;
     }
-    onImport?.(parsed);
-    toast.success(`${parsed.length} ${isAccount ? "accounts" : "proxies"} ready for processing`);
-    onOpenChange(false);
+    setBusy(true);
+    try {
+      await onImport?.(parsed);
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Import failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -271,12 +279,12 @@ export function ImportDialog({ open, onOpenChange, type, onImport }: ImportDialo
         </div>
 
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button size="sm" onClick={handleImport} disabled={parsed.length === 0}>
-            <Upload className="h-4 w-4" />
-            Import {parsed.length} {isAccount ? "accounts" : "proxies"}
+          <Button size="sm" onClick={handleImport} disabled={parsed.length === 0 || busy}>
+            {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {busy ? "Saving…" : `Import ${parsed.length} ${isAccount ? "accounts" : "proxies"}`}
           </Button>
         </DialogFooter>
       </DialogContent>

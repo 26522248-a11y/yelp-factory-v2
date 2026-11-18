@@ -17,17 +17,20 @@ import {
   Wifi,
 } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, SectionLabel } from "@/components/shared/bits";
+import { PageHeader } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Field, Input, Select, Separator, Switch } from "@/components/ui/form";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
+import { Field, Input, Select, Switch } from "@/components/ui/form";
+import { useQueryClient } from "@tanstack/react-query";
+import { apiErrorMessage, CONTRACT_VERSION, setApiConfig } from "@/lib/bridge";
+import { useApiConfig, useApiHealth } from "@/lib/hooks";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 
 const SECTIONS: [string, string, LucideIcon][] = [
   ["general", "General", UserCog],
+  ["connection", "Connection", Wifi],
   ["database", "Database", Database],
   ["gpm", "GPM", MonitorSmartphone],
   ["concurrency", "Concurrency", Proportions],
@@ -74,6 +77,53 @@ function ToggleRow({ title, desc, defaultOn, onChange }: { title: string; desc: 
 }
 
 export default function Config() {
+  const [active, setActive] = React.useState("general");
+  const apiConfig = useApiConfig();
+  const health = useApiHealth();
+  const qc = useQueryClient();
+  const [baseUrl, setBaseUrl] = React.useState("http://127.0.0.1:8787");
+  const [token, setToken] = React.useState("");
+  const apiOk = !!health.data && !health.isError;
+
+  React.useEffect(() => {
+    if (!apiConfig.data) return;
+    setBaseUrl(apiConfig.data.baseUrl);
+    setToken(apiConfig.data.token);
+  }, [apiConfig.data]);
+
+  const saveConnection = async () => {
+    try {
+      await setApiConfig({ baseUrl, token });
+      await qc.invalidateQueries({ queryKey: ["engine"] });
+      await health.refetch();
+      toast.success("Connection settings saved");
+    } catch (error) {
+      toast.error(apiErrorMessage(error));
+    }
+  };
+
+  React.useEffect(() => {
+    const scroller = document.querySelector("main");
+    if (!scroller) return;
+    const onScroll = () => {
+      const marker = scroller.getBoundingClientRect().top + 72;
+      let current = SECTIONS[0][0];
+      for (const [id] of SECTIONS) {
+        const el = document.getElementById(`config-${id}`);
+        if (el && el.getBoundingClientRect().top <= marker) current = id;
+      }
+      setActive(current);
+    };
+    onScroll();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const jumpTo = (id: string) => {
+    setActive(id);
+    document.getElementById(`config-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -88,16 +138,24 @@ export default function Config() {
       />
 
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-        <nav className="panel h-fit p-1.5">
+        <nav className="panel sticky top-0 h-fit p-1.5">
           {SECTIONS.map(([id, label, Icon]) => (
-            <a
+            <button
               key={id}
-              href={`#config-${id}`}
-              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[11.5px] text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              type="button"
+              onClick={() => jumpTo(id)}
+              aria-current={active === id ? "true" : undefined}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11.5px] transition",
+                active === id
+                  ? "bg-primary/10 font-medium text-primary"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
+              )}
             >
               <Icon className="h-3.5 w-3.5" />
               {label}
-            </a>
+              {active === id && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />}
+            </button>
           ))}
         </nav>
 
@@ -139,6 +197,45 @@ export default function Config() {
                   Replay first-run wizard
                 </Button>
                 <span className="text-[10.5px] text-muted-foreground">Rotating the key re-encrypts stored credentials.</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card id="config-connection">
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle>Console connection</CardTitle>
+              <Badge variant={apiOk ? "success" : "destructive"}>
+                {apiOk ? `connected · ${health.data?.status}` : "offline"}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Admin API URL" hint="Loopback or LAN/VPN. Remote public hosts must use HTTPS — plain public HTTP is rejected.">
+                  <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://127.0.0.1:8787" className="font-mono text-[11px]" />
+                </Field>
+                <Field label="Bearer token" hint="Must match YF_ADMIN_TOKEN in the engine .env.">
+                  <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="YF_ADMIN_TOKEN" className="font-mono text-[11px]" />
+                </Field>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" onClick={saveConnection}>
+                  <Save /> Save connection
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => health.refetch()}>
+                  Test connection
+                </Button>
+                <span className="text-[10.5px] text-muted-foreground">
+                  {health.isError
+                    ? apiErrorMessage(health.error)
+                    : health.data
+                    ? `engine v${health.data.version ?? "?"} · contract v${health.data.contract_version ?? "?"} · schema ${health.data.schema_revision ?? "?"} · ${health.data.host ?? "host ?"} · DB ${health.data.db ? "up" : "down"} · ${health.data.active_profiles} active${health.data.gpm_transport ? ` · GPM ${health.data.gpm_transport}` : ""}`
+                    : "No response yet — the console falls back to the sample dataset."}
+                </span>
+                {health.data && health.data.contract_version !== CONTRACT_VERSION && (
+                  <Badge variant="warning" className="text-[9px]">
+                    contract mismatch: console v{CONTRACT_VERSION}
+                  </Badge>
+                )}
               </div>
             </CardContent>
           </Card>

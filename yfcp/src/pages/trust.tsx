@@ -2,22 +2,22 @@ import * as React from "react";
 import { AreaChart, BarChart } from "@tremor/react";
 import { RefreshCcw, ShieldCheck, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel, TierBadge } from "@/components/shared/bits";
+import { PageHeader, StatTile, SectionLabel, TierBadge, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input, Progress } from "@/components/ui/form";
-import { accounts, trustHistory } from "@/lib/mock";
-import { cn } from "@/lib/utils";
-
-const buckets = [
-  { range: "0–25", count: accounts.filter((a) => a.trustScore <= 25).length },
-  { range: "26–50", count: accounts.filter((a) => a.trustScore > 25 && a.trustScore <= 50).length },
-  { range: "51–75", count: accounts.filter((a) => a.trustScore > 50 && a.trustScore <= 75).length },
-  { range: "76–100", count: accounts.filter((a) => a.trustScore > 75).length },
-];
+import { useAccountsData, useTrustHistoryData } from "@/lib/hooks";
 
 export default function Trust() {
+  const { data: accounts, source } = useAccountsData();
+  const { data: trustHistory } = useTrustHistoryData();
+  const buckets = [
+    { range: "0–25", count: accounts.filter((a) => a.trustScore <= 25).length },
+    { range: "26–50", count: accounts.filter((a) => a.trustScore > 25 && a.trustScore <= 50).length },
+    { range: "51–75", count: accounts.filter((a) => a.trustScore > 50 && a.trustScore <= 75).length },
+    { range: "76–100", count: accounts.filter((a) => a.trustScore > 75).length },
+  ];
   const sorted = [...accounts].sort((a, b) => b.trustScore - a.trustScore).slice(0, 10);
   const avg = Math.round(accounts.reduce((s, a) => s + a.trustScore, 0) / accounts.length);
 
@@ -28,9 +28,12 @@ export default function Trust() {
         title="Trust"
         description="Trust is derived from real behaviour, never seeded. The review gate opens at 75 with 7+ days, 8+ photos and 6 sessions in the last week."
         actions={
-          <Button size="sm" onClick={() => toast.success("Trust recompute queued for all accounts")}>
-            <RefreshCcw /> Recompute all
-          </Button>
+          <>
+            <SourceBadge source={source} />
+            <Button size="sm" onClick={() => toast.success("Trust recompute queued for all accounts")}>
+              <RefreshCcw /> Recompute all
+            </Button>
+          </>
         }
       />
 
@@ -47,7 +50,7 @@ export default function Trust() {
             <CardTitle>Farm trust trajectory</CardTitle>
           </CardHeader>
           <CardContent>
-            <AreaChart data={trustHistory} index="day" categories={["avg"]} colors={["indigo"]} className="h-52" yAxisWidth={32} showGridLines={false} />
+            <AreaChart data={trustHistory} index="day" categories={["avg"]} colors={["indigo"]} className="h-52" yAxisWidth={40} showGridLines={false} />
           </CardContent>
         </Card>
         <Card>
@@ -55,7 +58,7 @@ export default function Trust() {
             <CardTitle>Distribution</CardTitle>
           </CardHeader>
           <CardContent>
-            <BarChart data={buckets} index="range" categories={["count"]} colors={["sky"]} className="h-52" yAxisWidth={28} showGridLines={false} />
+            <BarChart data={buckets} index="range" categories={["count"]} colors={["sky"]} className="h-52" yAxisWidth={40} showGridLines={false} />
           </CardContent>
         </Card>
       </div>

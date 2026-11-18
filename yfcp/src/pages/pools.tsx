@@ -1,15 +1,18 @@
 import * as React from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { CheckCircle2, Database, FileUp, Mail, Plus, RefreshCcw, ShieldAlert, Smartphone, Trash2, Wifi } from "lucide-react";
+import { FileUp, Mail, RefreshCcw, ShieldAlert, Smartphone, Trash2, Wifi } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, SectionLabel } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { DataTable } from "@/components/shared/data-table";
+import { ImportDialog, type ParsedProxy } from "@/components/shared/import-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { emailDomains, emails, proxies, smsNumbers } from "@/lib/mock";
+import { apiErrorMessage } from "@/lib/bridge";
+import { useApiHealth, useEmailDomainsData, useEmailsData, useImportPool, usePoolStats, useProxiesData, useSmsNumbersData } from "@/lib/hooks";
+import { useImports } from "@/stores/imports";
 import type { EmailEntry, ProxyEntry, SmsNumber } from "@/types";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -21,7 +24,50 @@ const proxyBadge = {
 } as const;
 
 export default function Pools() {
-  const [domains, setDomains] = React.useState(emailDomains);
+  const { data: emailDomainsSeed } = useEmailDomainsData();
+  const { data: emails } = useEmailsData();
+  const { data: smsNumbers } = useSmsNumbersData();
+  const [domains, setDomains] = React.useState(emailDomainsSeed);
+  const [importOpen, setImportOpen] = React.useState(false);
+
+  const health = useApiHealth();
+  const { data: proxies, imported } = useProxiesData();  const { stats, source: poolSource } = usePoolStats();
+  const addProxies = useImports((s) => s.addProxies);
+  const markProxiesSynced = useImports((s) => s.markProxiesSynced);
+  const removeProxy = useImports((s) => s.removeProxy);
+  const importPool = useImportPool();
+
+  const handleImport = async (rows: unknown[]) => {
+    const parsed = rows as ParsedProxy[];
+    const before = useImports.getState().proxies.map((p) => p.raw);
+    const added = addProxies(
+      parsed.map((r) => ({ host: r.host, port: r.port, username: r.username, password: r.password, raw: r.raw }))
+    );
+
+    if (!health.data) {
+      toast.success(`Saved ${added} proxies locally — start the engine to push them to the pool`);
+      return;
+    }
+
+    try {
+      const result = await importPool.mutateAsync({ kind: "proxies", text: parsed.map((r) => r.raw).join("\n") });
+      const synced = useImports
+        .getState()
+        .proxies.filter((p) => !before.includes(p.raw))
+        .map((p) => p.id);
+      markProxiesSynced(synced);
+      toast.success(
+        `Engine imported ${result.valid} proxies${result.duplicates ? ` · ${result.duplicates} duplicates` : ""}${
+          result.invalid ? ` · ${result.invalid} invalid` : ""
+        }`
+      );
+    } catch (error) {
+      toast.warning(`Saved locally — engine import failed: ${apiErrorMessage(error)}`);
+    }
+  };
+
+  const proxyTotal = Object.values(stats.proxies).reduce((sum, n) => sum + n, 0) || proxies.length;
+  const emailTotal = Object.values(stats.emails).reduce((sum, n) => sum + n, 0) || emails.length;
 
   const proxyCols: ColumnDef<ProxyEntry>[] = [
     {
@@ -82,7 +128,15 @@ export default function Pools() {
           <Button size="icon-sm" variant="ghost" onClick={() => toast.info(`Probed ${row.original.host} — 92ms`)}>
             <Wifi />
           </Button>
-          <Button size="icon-sm" variant="ghost" className="text-destructive" onClick={() => toast.error("Proxy removed")}>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="text-destructive"
+            onClick={() => {
+              if (row.original.id.startsWith("ipx_")) removeProxy(row.original.id);
+              toast.error("Proxy removed");
+            }}
+          >
             <Trash2 />
           </Button>
         </div>
@@ -133,10 +187,11 @@ export default function Pools() {
         description="Proxies, mailboxes and SMS numbers. Pools are reserved atomically so two accounts can never share a resource."
         actions={
           <>
+            <SourceBadge source={imported.length ? "local" : poolSource} />
             <Button variant="outline" size="sm" onClick={() => toast.success("Probe-all queued")}>
               <RefreshCcw /> Probe all
             </Button>
-            <Button size="sm" onClick={() => toast.info("Import dialog opened")}>
+            <Button size="sm" onClick={() => setImportOpen(true)}>
               <FileUp /> Import
             </Button>
           </>
@@ -144,8 +199,8 @@ export default function Pools() {
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Proxies" value={proxies.length} hint={`${proxies.filter((p) => p.status === "available").length} available`} icon={<Wifi className="h-4 w-4" />} />
-        <StatTile label="Mailboxes" value={emails.length} hint={`${emails.filter((e) => e.status === "available").length} available`} tone="info" icon={<Mail className="h-4 w-4" />} />
+        <StatTile label="Proxies" value={proxyTotal} hint={`${stats.available_proxies} available`} icon={<Wifi className="h-4 w-4" />} />
+        <StatTile label="Mailboxes" value={emailTotal} hint={`${stats.available_emails} available`} tone="info" icon={<Mail className="h-4 w-4" />} />
         <StatTile label="SMS numbers" value={smsNumbers.length} hint={`${smsNumbers.filter((s) => s.status === "available").length} available`} tone="success" icon={<Smartphone className="h-4 w-4" />} />
         <StatTile label="Domain health" value="3 / 4" hint="1 disabled" tone="warning" icon={<ShieldAlert className="h-4 w-4" />} />
       </div>
@@ -204,6 +259,8 @@ export default function Pools() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <ImportDialog open={importOpen} onOpenChange={setImportOpen} type="proxies" onImport={handleImport} />
     </div>
   );
 }

@@ -6,6 +6,19 @@ export default {
     "./src/**/*.{ts,tsx}",
     "./node_modules/@tremor/**/*.{js,ts,jsx,tsx}",
   ],
+  /*
+   * Tremor builds chart colour classes dynamically (`fill-${colour}-500`,
+   * `bg-${colour}-500`…), so Tailwind's content scanner never sees the literal
+   * class names and the bars/sectors fall back to black. Keep the palette it
+   * can emit in the safelist.
+   */
+  safelist: [
+    {
+      pattern:
+        /(?:dark:)?(bg|text|fill|stroke|border|ring)-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(50|100|200|300|400|500|600|700|800|900|950)(?:\/(5|10|20|25|30|40|50|60|70|75|80|90|95))?/,
+      variants: ["dark", "hover"],
+    },
+  ],
   theme: {
     extend: {
       fontFamily: {

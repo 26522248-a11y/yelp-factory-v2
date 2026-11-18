@@ -26,6 +26,13 @@ tauri-plugin-os = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Relays console → engine admin API calls (the engine sends no CORS headers).
+# No TLS is needed: the admin API is bound to 127.0.0.1 and plain HTTP.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Admin token lives in Windows Credential Manager, not in the JSON store.
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
 
 [profile.release]
 # Kept buildable on low-memory operator boxes: LTO + single codegen unit peaks

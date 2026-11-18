@@ -2,14 +2,13 @@ import * as React from "react";
 import { BarChart } from "@tremor/react";
 import { CalendarDays, Flame, Play, RefreshCcw, SkipForward, Timer } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, SectionLabel, StatTile } from "@/components/shared/bits";
+import { PageHeader, StatTile, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Field, Input, Progress, Select, Switch } from "@/components/ui/form";
+import { Field, Input, Progress, Switch } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { accounts, warmingPlans, warmingSessions, warmingTasks } from "@/lib/mock";
-import { cn, timeAgo } from "@/lib/utils";
+import { useWarmingPlansData, useWarmingSessionsData, useWarmingTasksData } from "@/lib/hooks";
 
 const phaseDays = [
   { phase: "P0", days: 2, accounts: 8 },
@@ -20,6 +19,9 @@ const phaseDays = [
 ];
 
 export default function Warming() {
+  const { data: warmingPlans, source } = useWarmingPlansData();
+  const { data: warmingSessions } = useWarmingSessionsData();
+  const { data: warmingTasks } = useWarmingTasksData();
   const [enabled, setEnabled] = React.useState(true);
   const [minGap, setMinGap] = React.useState(90);
 
@@ -39,6 +41,7 @@ export default function Warming() {
         description="The cadence that makes accounts look alive. Plans are generated per account, released inside the metro working window, and gated by trust."
         actions={
           <>
+            <SourceBadge source={source} />
             <Button variant="outline" size="sm" onClick={() => toast.success("Plans regenerated for 12 accounts")}>
               <RefreshCcw /> Regenerate
             </Button>
@@ -169,7 +172,7 @@ export default function Warming() {
               <CardTitle>Action distribution per session</CardTitle>
             </CardHeader>
             <CardContent>
-              <BarChart data={actions} index="session" categories={["search", "pageviews", "scrolls", "votes"]} colors={["indigo", "sky", "emerald", "amber"]} stack className="h-64" yAxisWidth={28} showGridLines={false} />
+              <BarChart data={actions} index="session" categories={["search", "pageviews", "scrolls", "votes"]} colors={["indigo", "sky", "emerald", "amber"]} stack className="h-64" yAxisWidth={40} showGridLines={false} />
             </CardContent>
           </Card>
         </TabsContent>

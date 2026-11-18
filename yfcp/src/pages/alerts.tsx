@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Bell, BellRing, Check, CheckCheck, Inbox, ShieldAlert, Volume2 } from "lucide-react";
 import { toast } from "sonner";
-import { PageHeader, StatTile, EmptyState } from "@/components/shared/bits";
+import { PageHeader, StatTile, EmptyState, SourceBadge } from "@/components/shared/bits";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/form";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { JsonViewer } from "@/components/shared/bits";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { alerts } from "@/lib/mock";
+import { useAlertsData } from "@/lib/hooks";
 import type { Alert } from "@/types";
 import { cn, timeAgo } from "@/lib/utils";
 import { notify } from "@/lib/bridge";
@@ -17,6 +17,7 @@ import { notify } from "@/lib/bridge";
 const sevVariant = { critical: "destructive", warning: "warning", info: "info" } as const;
 
 export default function Alerts() {
+  const { data: alerts, source } = useAlertsData();
   const [items, setItems] = React.useState(alerts);
   const [detail, setDetail] = React.useState<Alert | null>(null);
   const [filter, setFilter] = React.useState<"all" | "critical" | "warning" | "info">("all");
@@ -36,6 +37,7 @@ export default function Alerts() {
         description="Everything that went wrong or needs a human. Alerts are written to disk by the engine and pushed to Telegram, Discord or a webhook."
         actions={
           <>
+            <SourceBadge source={source} />
             <Button variant="outline" size="sm" onClick={() => { setItems((p) => p.map((a) => ({ ...a, status: "acknowledged" }))); toast.success("All alerts acknowledged"); }}>
               <CheckCheck /> Acknowledge all
             </Button>

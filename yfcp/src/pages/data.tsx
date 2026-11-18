@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox, Field, Input, Select, Switch } from "@/components/ui/form";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/primitives";
-import { ImportDialog } from "@/components/shared/import-dialog";
+import { ImportDialog, type ParsedAccount, type ParsedProxy } from "@/components/shared/import-dialog";
+import { apiErrorMessage } from "@/lib/bridge";
+import { useApiHealth, useImportPool } from "@/lib/hooks";
+import { useImports } from "@/stores/imports";
 import type { LucideIcon } from "lucide-react";
 
 const exportTargets = ["Accounts", "Reviews", "Batches", "Trust scores", "Audit results", "Pool health", "Velocity data"];
@@ -27,6 +30,13 @@ export default function Data() {
   const [importOpen, setImportOpen] = React.useState(false);
   const [importTarget, setImportTarget] = React.useState<"accounts" | "proxies">("accounts");
   const [lastImport, setLastImport] = React.useState<{ name: string; count: number } | null>(null);
+  const addAccounts = useImports((s) => s.addAccounts);
+  const addProxies = useImports((s) => s.addProxies);
+  const clearImports = useImports((s) => s.clear);
+  const importedAccounts = useImports((s) => s.accounts);
+  const importedProxies = useImports((s) => s.proxies);
+  const health = useApiHealth();
+  const importPool = useImportPool();
 
   const handleImportClick = (name: string) => {
     if (name === "Proxies") setImportTarget("proxies");
@@ -38,8 +48,33 @@ export default function Data() {
     setImportOpen(true);
   };
 
-  const handleImport = (result: unknown[]) => {
-    setLastImport({ name: importTarget === "proxies" ? "Proxies" : "Accounts", count: result.length });
+  const handleImport = async (result: unknown[]) => {
+    if (importTarget === "proxies") {
+      const rows = result as ParsedProxy[];
+      const added = addProxies(
+        rows.map((r) => ({ host: r.host, port: r.port, username: r.username, password: r.password, raw: r.raw }))
+      );
+      setLastImport({ name: "Proxies", count: added });
+      if (health.data) {
+        try {
+          const res = await importPool.mutateAsync({ kind: "proxies", text: rows.map((r) => r.raw).join("\n") });
+          toast.success(`Saved ${added} locally · engine imported ${res.valid}`);
+          return;
+        } catch (error) {
+          toast.warning(`Saved locally — engine import failed: ${apiErrorMessage(error)}`);
+          return;
+        }
+      }
+      toast.success(`Saved ${added} proxies locally`);
+      return;
+    }
+
+    const rows = result as ParsedAccount[];
+    const added = addAccounts(
+      rows.map((r) => ({ email: r.email, password: r.password, yelpUrl: r.yelpUrl, accessEmailUrl: r.accessEmailUrl }))
+    );
+    setLastImport({ name: "Accounts", count: added });
+    toast.success(`Saved ${added} accounts locally — visible on the Accounts page`);
   };
 
   return (
@@ -154,6 +189,31 @@ export default function Data() {
               </CardContent>
             </Card>
           ))}
+          <Card className="md:col-span-2 xl:col-span-3">
+            <CardHeader>
+              <CardTitle>Saved imports</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-wrap items-center gap-4">
+              <div className="text-[11px] text-muted-foreground">
+                Accounts: <b className="text-foreground">{importedAccounts.length}</b> · Proxies:{" "}
+                <b className="text-foreground">{importedProxies.length}</b>
+              </div>
+              <Badge variant="muted">tauri store / localStorage</Badge>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto text-destructive"
+                disabled={importedAccounts.length + importedProxies.length === 0}
+                onClick={() => {
+                  clearImports();
+                  setLastImport(null);
+                  toast.success("Saved imports cleared");
+                }}
+              >
+                Clear saved imports
+              </Button>
+            </CardContent>
+          </Card>
           <ImportDialog open={importOpen} onOpenChange={setImportOpen} type={importTarget} onImport={handleImport} />
         </TabsContent>
 

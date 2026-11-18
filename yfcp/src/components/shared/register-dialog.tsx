@@ -14,6 +14,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ImportDialog, type ParsedAccount } from "@/components/shared/import-dialog";
+import { apiErrorMessage } from "@/lib/bridge";
+import { useApiHealth, useSignupBatch } from "@/lib/hooks";
+import { useImports } from "@/stores/imports";
 
 const METROS = [
   "New York", "Los Angeles", "Chicago", "Houston", "Phoenix",
@@ -61,6 +64,9 @@ export function RegisterDialog({ open, onOpenChange }: RegisterDialogProps) {
   const [captchaKey, setCaptchaKey] = React.useState("");
   const [importOpen, setImportOpen] = React.useState(false);
   const [importedAccounts, setImportedAccounts] = React.useState<ParsedAccount[]>([]);
+  const health = useApiHealth();
+  const signup = useSignupBatch();
+  const addAccounts = useImports((s) => s.addAccounts);
 
   React.useEffect(() => {
     if (open) {
@@ -74,13 +80,42 @@ export function RegisterDialog({ open, onOpenChange }: RegisterDialogProps) {
     if (!cities.includes(city)) setCity(cities[0] || "");
   }, [metro, city]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    if (tab === "import") {
+      if (importedAccounts.length === 0) {
+        toast.error("Import a .txt file first");
+        return;
+      }
+      const added = addAccounts(
+        importedAccounts.map((a) => ({
+          email: a.email,
+          password: a.password,
+          yelpUrl: a.yelpUrl,
+          accessEmailUrl: a.accessEmailUrl,
+        }))
+      );
+      toast.success(`${added} imported accounts saved — they will join the next batch`);
+      onOpenChange(false);
+      return;
+    }
+
     const n = parseInt(count, 10) || 0;
     if (n <= 0) {
       toast.error("Enter a valid account count");
       return;
     }
-    toast.success(`Batch created — ${n} accounts in ${metro}/${city} (signup pipeline)`);
+
+    if (health.data) {
+      try {
+        const result = await signup.mutateAsync({ count: n, city });
+        toast.success(`Engine accepted ${result.accepted} signup${result.accepted === 1 ? "" : "s"} for ${result.city ?? city}`);
+      } catch (error) {
+        toast.warning(`Batch not accepted by the engine — ${apiErrorMessage(error)}`);
+        return;
+      }
+    } else {
+      toast.success(`Batch recorded locally — ${n} accounts in ${metro}/${city} (start the engine to execute)`);
+    }
     onOpenChange(false);
   };
 
@@ -225,9 +260,11 @@ export function RegisterDialog({ open, onOpenChange }: RegisterDialogProps) {
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button size="sm" onClick={handleCreate}>
+          <Button size="sm" onClick={handleCreate} disabled={signup.isPending}>
             <Globe className="h-4 w-4" />
-            {tab === "import"
+            {signup.isPending
+              ? "Submitting…"
+              : tab === "import"
               ? `Create batch with ${importedAccounts.length} imported accounts`
               : `Create batch — ${count} accounts`}
           </Button>
